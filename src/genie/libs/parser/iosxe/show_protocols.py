@@ -33,9 +33,9 @@ class ShowIpProtocolsSchema(MetaParser):
                                     Any(): {
                                         'distance': int,
                                         'maximum_paths': int,
-                                        'output_delay': int,
-                                        'send_version': int,
-                                        'receive_version': int,
+                                        Optional('output_delay'): int,
+                                        'send_version': Or(int,str),
+                                        'receive_version': Or(int,str),
                                         Optional('automatic_network_summarization_in_effect'): bool,
                                         'outgoing_update_filterlist': {
                                             'outgoing_update_filterlist': str,
@@ -184,11 +184,12 @@ class ShowIpProtocolsSchema(MetaParser):
                             {'default':
                                 {'address_family':
                                     {'ipv4':
-                                        {'outgoing_filter_list': str,
-                                        'incoming_filter_list': str,
+                                        {
+                                        Optional('outgoing_filter_list'): str,
+                                        Optional('incoming_filter_list'): str,
                                         'igp_sync': bool,
                                         'automatic_route_summarization': bool,
-                                        'maximum_path': int,
+                                        Optional('maximum_path'): int,
                                         Optional('preference'):
                                             {'multi_values':
                                                 {'external': int,
@@ -203,6 +204,10 @@ class ShowIpProtocolsSchema(MetaParser):
                                                 'last_update': str,
                                                 },
                                             },
+                                        Optional('timers'): {
+                                            'update_interval': int,
+                                            'next_update': int,
+                                        },
                                         },
                                     },
                                 },
@@ -219,7 +224,7 @@ class ShowIpProtocolsSchema(MetaParser):
                                     {Any():
                                         {'outgoing_filter_list': str,
                                         'incoming_filter_list': str,
-                                        'redistributing': str,
+                                        Optional('redistributing'): str,
                                         Optional('address_summarization'): list,
                                         Optional('maximum_path'): int,
                                         'preference':
@@ -256,6 +261,7 @@ class ShowIpProtocols(ShowIpProtocolsSchema):
     ''' Parser for "show ip protocols" '''
 
     cli_command = ['show ip protocols','show ip protocols vrf {vrf}']
+    exclude = ['last_update', ' network' , 'next_update']
 
     def cli(self, vrf="" ,cmd="",output=None):
 
@@ -305,7 +311,7 @@ class ShowIpProtocols(ShowIpProtocolsSchema):
         p2 = re.compile(r"^(?P<dir>(Outgoing|Incoming)) +update +filter +list"
                          " +for +all +interfaces +is +(?P<state>([a-zA-Z\s]+))$")
 
-        # Router ID 1.1.1.1
+        # Router ID 10.4.1.1
         p3 = re.compile(r"^Router +ID +(?P<router_id>(\S+))$")
 
         # Number of areas in this router is 1. 1 normal 0 stub 0 nssa
@@ -321,7 +327,7 @@ class ShowIpProtocols(ShowIpProtocolsSchema):
 
         # Routing on Interfaces Configured Explicitly (Area 0):
         p6_2 = re.compile(r"^Routing +on +Interfaces +Configured +Explicitly"
-                         " +\(Area +(?P<area>(\d+))\)\:$")
+                         " +\(Area +(?P<area>[\d\.]+)\)\:$")
 
 
         # Routing Information Sources:
@@ -337,13 +343,13 @@ class ShowIpProtocols(ShowIpProtocolsSchema):
         # GigabitEthernet2
         # GigabitEthernet1
         # TenGigabitEthernet0/0/26
-        p7 = re.compile(r"^(?P<interface>(Lo.*|Gi.*|Ten.*|.*(SL|VL).*))$")
+        p7 = re.compile(r"^(?P<interface>(Lo\S*|Gi\S*|Ten\S*|\S*(SL|VL)\S*))$")
 
 
         # Gateway         Distance      Last Update
-        # 3.3.3.3              110      07:33:00
-        # 2.2.2.2              110      07:33:00
-        # 4.4.4.4              110      00:19:15
+        # 10.36.3.3            110      07:33:00
+        # 10.16.2.2            110      07:33:00
+        # 10.64.4.4            110      00:19:15
         p8 = re.compile(r"^(?P<gateway>([0-9\.]+)) +(?P<distance>(\d+))"
                          " +(?P<last_update>([a-zA-Z0-9\:\.]+))$")
 
@@ -370,7 +376,8 @@ class ShowIpProtocols(ShowIpProtocolsSchema):
                           " +(?P<route>(enabled|disabled))$")
 
         # Distance: external 20 internal 200 local 200
-        p15 = re.compile(r"^Distance: +external +(?P<external>(\d+)) +internal"
+        # Distance:external 20 internal 200 local 200
+        p15 = re.compile(r"^Distance: *external +(?P<external>(\d+)) +internal"
                           " +(?P<internal>(\d+)) +local +(?P<local>(\d+))$")
 
 
@@ -407,7 +414,7 @@ class ShowIpProtocols(ShowIpProtocolsSchema):
 
         # Sending updates every 10 seconds, next due in 8 seconds
         p106 = re.compile(
-            r'^\s*Sending +updates every +(?P<update_interval>\d+) +seconds, +next +due +in (?P<next_update>\d+) +seconds$')
+            r'^\s*Sending +updates every +(?P<update_interval>\d+) +seconds, +next +due +in (?P<next_update>\d+) +(seconds|sec)$')
 
         # Invalid after 21 seconds, hold down 22, flushed after 23
         p107 = re.compile(
@@ -418,7 +425,8 @@ class ShowIpProtocols(ShowIpProtocolsSchema):
         p108 = re.compile(r'^\s*Default +redistribution +metric +is +(?P<default_redistribution_metric>\d+)$')
 
         # Redistributing: connected, static, rip
-        p109 = re.compile(r'^\s*Redistributing: +(?P<Redistributing>[\w\,\s]+)$')
+        # Redistributing:connected, static
+        p109 = re.compile(r'^\s*Redistributing: *(?P<Redistributing>[\w\,\s]+)$')
 
         # Neighbor(s):
         p110 = re.compile(r'^\s*Neighbor\(s\):$')
@@ -429,6 +437,10 @@ class ShowIpProtocols(ShowIpProtocolsSchema):
         # Default version control: send version 2, receive version 2
         p112 = re.compile(r'^\s*Default +version +control: +send +version +(?P<send_version>\d+)'
                           ', receive version +(?P<receive_version>\d+)$')
+
+        # Default version control: send version 1, receive any version
+        p112_1 = re.compile(r'^\s*Default +version +control: +send +version +(?P<send_version>\d+)'
+                          ', receive +(?P<receive_version>\w+) version$')
 
         #   Interface                           Send  Recv  Triggered RIP  Key-chain
         #   GigabitEthernet3.100                2     2          No        1
@@ -663,6 +675,12 @@ class ShowIpProtocols(ShowIpProtocolsSchema):
                     rip_dict.update({k: int(v) for k, v in group.items() if v})
                     continue
 
+                m = p112_1.match(line)
+                if m:
+                    group = m.groupdict()
+                    rip_dict.update({k: v for k, v in group.items() if v})
+                    continue
+
                 # Automatic network summarization is not in effect
                 # Automatic network summarization is in effect
                 m = p114.match(line)
@@ -779,7 +797,7 @@ class ShowIpProtocols(ShowIpProtocolsSchema):
                     pdict[direction] = str(group['state']).lower()
                     continue
 
-                # Router ID 1.1.1.1
+                # Router ID 10.4.1.1
                 m = p3.match(line)
                 if m:
                     ospf_dict['router_id'] = str(m.groupdict()['router_id'])
@@ -942,9 +960,9 @@ class ShowIpProtocols(ShowIpProtocolsSchema):
                     continue
 
                 # Gateway         Distance      Last Update
-                # 3.3.3.3              110      07:33:00
-                # 2.2.2.2              110      07:33:00
-                # 4.4.4.4              110      00:19:15
+                # 10.36.3.3            110      07:33:00
+                # 10.16.2.2            110      07:33:00
+                # 10.64.4.4            110      00:19:15
                 m = p8.match(line)
                 if m:
                     group = m.groupdict()
@@ -1046,18 +1064,30 @@ class ShowIpProtocols(ShowIpProtocolsSchema):
                     group = m.groupdict()
                     if protocol == 'bgp':
                         multi_values_dict = bgp_dict.setdefault('preference', {}).setdefault('multi_values', {})
-                    multi_values_dict['external'] = int(group['external'])
-                    multi_values_dict['internal'] = int(group['internal'])
-                    multi_values_dict['local'] = int(group['local'])
+                        multi_values_dict['external'] = int(group['external'])
+                        multi_values_dict['internal'] = int(group['internal'])
+                        multi_values_dict['local'] = int(group['local'])
                     continue
 
+                # Sending updates every 60 seconds, next due in 0 sec
+                m = p106.match(line)
+                if m:
+                    group = m.groupdict()
+                    timers_dict = bgp_dict.setdefault('timers', {})
+                    timers_dict.update({'update_interval': int(group['update_interval'])})
+                    timers_dict.update({'next_update': int(group['next_update'])})
+                    continue
+
+                
                 # Redistributing: isis banana
                 m = p16.match(line)
                 if m:
                     if protocol == 'isis':
                         isis_dict['redistributing'] = m.groupdict()['redistributing']
+                    continue
 
         return ret_dict
+
 
 
 
@@ -1070,10 +1100,16 @@ class ShowIpProtocolsSectionRip(ShowIpProtocols):
        show ip protocols vrf {vrf} | sec rip
        """
 
-    cli_command = ["show ip protocols | sec rip","show ip protocols vrf {vrf} | sec rip"]
+    cli_command = ["show ip protocols | sec rip", "show ip protocols vrf {vrf} | sec rip"]
+    exclude = ['network','next_update']
 
     def cli(self, vrf="", cmd ="",output=None):
-        return super().cli(cmd=self.cli_command,vrf=vrf,output=output)
+        if vrf:
+            cmd = self.cli_command[1].format(vrf=vrf)
+        else:
+            cmd = self.cli_command[0]
+
+        return super().cli(cmd=cmd, vrf=vrf,output=output)
 
 # ====================================================
 #  schema for show ipv6 protocols | sec rip

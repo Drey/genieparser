@@ -61,6 +61,14 @@ class ShowIpMrouteVrfAll(ShowIpMrouteVrfAllSchema):
     """Parser for show ip mroute vrf all"""
 
     cli_command = 'show ip mroute vrf all'
+    exclude = [
+        'flags',
+        'incoming_interface_list',
+        'oil_count',
+        'outgoing_interface_list',
+        'oil_flags',
+        'oil_uptime',
+        'uptime']
 
     def cli(self, output=None):
         if output is None:
@@ -240,6 +248,11 @@ class ShowIpv6MrouteVrfAll(ShowIpv6MrouteVrfAllSchema):
     """Parser for show ipv6 mroute vrf all"""
 
     cli_command = 'show ipv6 mroute vrf all'
+    exclude = [
+        'last_reported',
+        'uptime',
+        'oil_uptime',
+        'incoming_interface_list']
 
     def cli(self, output=None):
         # Parser for show ipv6 mroute vrf all
@@ -483,7 +496,7 @@ class ShowIpStaticRouteMulticast(ShowIpStaticRouteMulticastSchema):
                     static_routemulticast_dict['vrf'][vrf]['address_family'][address_family] = {}
                 continue
 
-            #112.0.0.0/8, configured nh: 0.0.0.0/32 Null0 
+            #10.49.0.0/8, configured nh: 0.0.0.0/32 Null0 
             p3 =  re.compile(r'^\s*(?P<mroute>[0-9\.\/]+), +configured +nh:'
                               ' +(?P<neighbor_address>[a-zA-Z0-9\.\/]+)'
                               ' +(?P<interface_name>[a-zA-Z0-9\.]+)$')
@@ -803,6 +816,11 @@ class ShowForwardingDistributionMulticastRoute(ShowForwardingDistributionMultica
         show forwarding distribution multicast route vrf all"""
     cli_command = ['show forwarding distribution multicast route vrf {vrf}',
                    'show forwarding distribution multicast route']
+    exclude = [
+        'flags',
+        'oif_index',
+        'num_of_oifs',
+        'oifs']
 
     def cli(self, vrf="", output=None):
         # finding vrf names
@@ -830,6 +848,7 @@ class ShowForwardingDistributionMulticastRoute(ShowForwardingDistributionMultica
 
         # IPv4 Multicast Routing Table for table-id: 1
         # IPv4 Multicast Routing Table for table-id: 0x3
+
         p1 = re.compile(r'^\s*IPv4 +Multicast +Routing +Table +for +table\-id: +(?P<vrf_id>[\d*]+)$')
 
         # Total number of groups: 5

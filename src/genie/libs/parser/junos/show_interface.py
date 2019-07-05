@@ -47,6 +47,9 @@ class ShowInterfacesTerse(ShowInterfacesTerseSchema):
     """Parser for show interfaces terse [| match <interface>]"""
 
     cli_command = ['show interfaces terse | match {interface}','show interfaces terse' ]
+    exclude = [
+        'duration'
+    ]
 
     def cli(self, interface=None,output=None):
         # execute the command
@@ -70,7 +73,7 @@ class ShowInterfacesTerse(ShowInterfacesTerseSchema):
                           '[\-\>]+? *(?P<remote>[\w\.\:\/]+))?$')
 
 
-        #                                             128.0.0.1/2       
+        #                                             172.16.64.1/2       
         #                                    inet6    fe80::250:56ff:fe82:ba52/64
         #                                             fec0::a:0:0:4/64
         #                                    tnp      0x4
@@ -113,7 +116,7 @@ class ShowInterfacesTerse(ShowInterfacesTerseSchema):
                 continue
 
 
-            #                                             128.0.0.1/2       
+            #                                             172.16.64.1/2       
             #                                    inet6    fe80::250:56ff:fe82:ba52/64
             #                                             fec0::a:0:0:4/64
             #                                    tnp      0x4

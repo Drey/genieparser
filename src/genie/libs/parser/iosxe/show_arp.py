@@ -6,8 +6,11 @@ IOSXE parsers for the following show commands:
     * show arp vrf <vrf>
     * show arp vrf <vrf> <WORD>
     * show ip arp
+    * show ip arp vrf <vrf>
     * show ip arp summary
     * show ip traffic
+    * show arp application
+    * show arp summary
 '''
 
 # Python
@@ -33,7 +36,16 @@ class ShowArpSchema(MetaParser):
     """
 
     schema = {
-        'interfaces': {
+        Optional('global_static_table'): {
+            Any(): {
+                'ip_address': str,
+                'mac_address': str,
+                'encap_type': str,
+                'age': str,
+                'protocol': str,
+            },
+        },
+        Optional('interfaces'): {
             Any(): {
                 'ipv4': {
                     'neighbors': {     
@@ -59,6 +71,7 @@ class ShowArp(ShowArpSchema):
                   show arp vrf <vrf> <WROD> """
 
     cli_command = ['show arp','show arp vrf {vrf}','show arp vrf {vrf} {intf_or_ip}','show arp {intf_or_ip}']
+    exclude = ['age']
 
     def cli(self, vrf='', intf_or_ip='', cmd=None, output=None):
         if output is None:
@@ -75,39 +88,65 @@ class ShowArp(ShowArpSchema):
         else:
             out = output
 
-        # initial regexp pattern
+        # Internet  192.168.234.1           -   58bf.eab6.2f51  ARPA   Vlan100
+        # Internet  10.169.197.93          -   fa16.3e95.2218  ARPA
         p1 = re.compile(r'^(?P<protocol>\w+) +(?P<address>[\d\.\:]+) +(?P<age>[\d\-]+) +'
-                         '(?P<mac>[\w\.]+) +(?P<type>\w+) +(?P<interface>[\w\.\/\-]+)$')
+                         '(?P<mac>[\w\.]+) +(?P<type>\w+)( +(?P<interface>[\w\.\/\-]+))?$')
         # initial variables
         ret_dict = {}
 
         for line in out.splitlines():
             line = line.strip()
 
-            # Internet  201.0.12.1              -   58bf.eab6.2f51  ARPA   Vlan100
+            # Internet  192.168.234.1           -   58bf.eab6.2f51  ARPA   Vlan100
+            # Internet  10.169.197.93          -   fa16.3e95.2218  ARPA
             m = p1.match(line)
             if m:
                 group = m.groupdict()
                 address = group['address']
                 interface = group['interface']
-                final_dict = ret_dict.setdefault('interfaces', {}).setdefault(
-                    interface, {}).setdefault('ipv4', {}).setdefault(
-                    'neighbors', {}).setdefault(address, {})
-                
-                final_dict['ip'] = address
-                final_dict['link_layer_address'] = group['mac']
-                final_dict['age'] = group['age']
-                if group['age'] == '-':
-                    final_dict['origin'] = 'static'
+                if interface:
+                    final_dict = ret_dict.setdefault('interfaces', {}).setdefault(
+                        interface, {}).setdefault('ipv4', {}).setdefault(
+                        'neighbors', {}).setdefault(address, {})
+                    
+                    final_dict['ip'] = address
+                    final_dict['link_layer_address'] = group['mac']
+                    final_dict['type'] = group['type']
+                    if group['age'] == '-':
+                        final_dict['origin'] = 'static'
+                    else:
+                        final_dict['origin'] = 'dynamic'
                 else:
-                    final_dict['origin'] = 'dynamic'
+                    final_dict = ret_dict.setdefault(
+                        'global_static_table', {}).setdefault(address, {})
+                    final_dict['ip_address'] = address
+                    final_dict['mac_address'] = group['mac']
+                    final_dict['encap_type'] = group['type']
 
-                final_dict['type'] = group['type']
+                final_dict['age'] = group['age']
                 final_dict['protocol'] = group['protocol']
                 continue
 
         return ret_dict
 
+# =====================================
+# Parser for 'show ip arp, show ip arp vrf <vrf>'
+# =====================================
+class ShowIpArp(ShowArp):
+    """Parser for 'show ip arp,  show ip arp vrf <vrf>"""
+    cli_command = ['show ip arp', 'show ip arp vrf {vrf}']
+
+    def cli(self, vrf='', output=None):
+        if output is None:
+            if vrf:
+                cmd = self.cli_command[1].format(vrf=vrf)
+            else:
+                cmd = self.cli_command[0]
+            out = self.device.execute(cmd)
+        else:
+            out = output
+        return super().cli(output=out)
 # =====================================
 # Schema for 'show ip arp summary'
 # =====================================
@@ -169,7 +208,7 @@ class ShowIpTrafficSchema(MetaParser):
             'arp_out_replies': int,
             'arp_out_proxy': int,
             'arp_out_reverse': int,
-            'arp_drops_input_full': int,
+            Optional('arp_drops_input_full'): int,
         },
         'ip_statistics': {
             'ip_rcvd_total': int,
@@ -341,6 +380,14 @@ class ShowIpTraffic(ShowIpTrafficSchema):
         parser class - implements detail parsing mechanisms for cli,xml and yang output.
     """
     cli_command = 'show ip traffic'
+    exclude = ['bgp_received_keepalives' , 'bgp_received_total', 'bgp_sent_keepalives', 'bgp_sent_total' ,
+                'eigrp_ipv4_received_total' , 'eigrp_ipv4_sent_total', 'icmp_received_echo', 'icmp_sent_echo_reply',
+                'igmp_host_queries', 'igmp_host_reports', 'igmp_total', 'ip_bcast_received', 'ip_bcast_sent', 'ip_mcast_received',
+                'ip_mcast_sent', 'ip_opts_alert', 'ip_rcvd_format_errors', 'ip_rcvd_local_destination', 'ip_rcvd_total' ,
+                'ip_rcvd_with_optns', 'ip_sent_generated', 'ospf_received_hello', 'ospf_received_lnk_st_acks', 'ospf_received_lnk_st_updates'
+                'ospf_received_total' , 'ospf_sent_hello' , 'ospf_sent_lnk_st_acks', 'ospf_sent_lnk_st_updates', 'ospf_sent_total', 'pimv2_bootstraps',
+                'pimv2_candidate_rp_advs', 'pimv2_hellos', 'pimv2_registers', 'pimv2_registers_stops', 'pimv2_total', 'tcp_received_no_port', 'tcp_received_total', 
+                'tcp_sent_total', 'udp_received_no_port', 'udp_received_total', 'udp_sent_total']
     def cli(self,output=None):
         if output is None:
             # excute command to get output
@@ -550,7 +597,7 @@ class ShowIpTraffic(ShowIpTrafficSchema):
             '+state +acks$')
 
         # Sent: 9456 total
-        p41 = re.compile(r'^Sent: +(?P<ospf_sent_total>\d+) +total$')
+        p41 = re.compile(r'^Sent: +(?P<sent_total>\d+) +total$')
 
         # 8887 hello, 30 database desc, 8 link state req
         p42 = re.compile(r'^(?P<ospf_sent_hello>\d+) +hello, '
@@ -627,6 +674,9 @@ class ShowIpTraffic(ShowIpTrafficSchema):
 
         # EIGRP-IPv4 statistics:
         p59 = re.compile(r'^EIGRP-IPv4 +statistics:')
+
+        # IP-EIGRP statistics:
+        p59_1 = re.compile(r'^IP-EIGRP +statistics:')
 
         # Rcvd: 4612 total
         p60 = re.compile(r'^Rcvd: +(?P<eigrp_ipv4_received_total>\d+) +total$')
@@ -945,11 +995,21 @@ class ShowIpTraffic(ShowIpTrafficSchema):
                 continue
 
             m = p41.match(line)
-            if m and location == 'ospf_statistics':
-                category = 'sent'
+            if m:
                 groups = m.groupdict()
-                ret_dict['ospf_statistics'].update({k: \
-                    int(v) for k, v in groups.items()})
+                if location == 'ospf_statistics':
+                    category = 'sent'
+                    sdict = ret_dict['ospf_statistics']
+                    key = 'ospf_sent_total'
+                elif location == 'tcp_statistics':
+                    sdict = ret_dict['tcp_statistics']
+                    key = 'tcp_sent_total'
+                elif location == 'eigrp_ipv4_statistics':
+                    sdict = ret_dict['eigrp_ipv4_statistics']
+                    key = 'eigrp_ipv4_sent_total'
+                else:
+                    continue
+                sdict[key] = int(groups['sent_total'])
                 continue
 
             m = p42.match(line)
@@ -1071,26 +1131,19 @@ class ShowIpTraffic(ShowIpTrafficSchema):
                     int(v) for k, v in groups.items()})
                 continue
 
-            m = p58.match(line)
-            if m and not 'eigrp_ipv4_statistics' in ret_dict:
-                groups = m.groupdict()
-                ret_dict['tcp_statistics'].update({k: \
-                    int(v) for k, v in groups.items()})
-                continue
-
             m = p59.match(line)
             if m:
                 ret_dict.setdefault('eigrp_ipv4_statistics', {})
+                location = 'eigrp_ipv4_statistics'
+                continue
+
+            m = p59_1.match(line)
+            if m:
+                ret_dict.setdefault('eigrp_ipv4_statistics', {})
+                location = 'eigrp_ipv4_statistics'
                 continue
 
             m = p60.match(line)
-            if m:
-                groups = m.groupdict()
-                ret_dict['eigrp_ipv4_statistics'].update({k: \
-                    int(v) for k, v in groups.items()})
-                continue
-
-            m = p61.match(line)
             if m:
                 groups = m.groupdict()
                 ret_dict['eigrp_ipv4_statistics'].update({k: \
@@ -1131,5 +1184,174 @@ class ShowIpTraffic(ShowIpTrafficSchema):
                 ret_dict['bgp_statistics'].update({k: \
                     int(v) for k, v in groups.items()})
                 continue
+
+        return ret_dict
+
+
+# ===========================================================
+# Parser for 'show arp application'
+# ===========================================================
+class ShowArpApplicationSchema(MetaParser):
+    """
+    Schema for show arp application
+    """
+    
+    schema = {
+        'num_of_clients_registered': int,
+        'applications': {
+            Any(): {
+                'id': int,
+                'num_of_subblocks': int
+            }
+        }
+    }
+
+class ShowArpApplication(ShowArpApplicationSchema):
+    """
+    Parser for show arp application
+    """
+    
+    cli_command = 'show arp application'
+
+    def cli(self, output=None):
+        if output is None:
+            out = self.device.execute(self.cli_command)
+        else:
+            out = output
+        
+        # initial variables
+        ret_dict = {}
+        
+        # Number of clients registered: 16
+        p1 = re.compile(r'^\s*Number +of +clients +registered: +' \
+                '(?P<num_of_clients>\d+)$')
+
+        # ASR1000-RP SPA Ether215 10024
+        p2 = re.compile(r'^(?P<application_name>[\w\W]{0,20})(?P<id>\d+)\s+(?P<num_of_subblocks>\d+)$')
+
+        for line in out.splitlines():
+            line = line.strip()
+            # Number of clients registered: 16
+            m = p1.match(line)
+            if m:
+                group = m.groupdict()
+                ret_dict.setdefault('num_of_clients_registered', \
+                    int(group['num_of_clients']))
+                continue
+            
+            # ASR1000-RP SPA Ether215 10024
+            m = p2.match(line)
+            if m:
+                application = ret_dict.setdefault('applications', {})
+                group = m.groupdict()
+                application[group['application_name'].rstrip()] = {'id': \
+                    int(group['id']), 'num_of_subblocks': \
+                    int(group['num_of_subblocks'])}
+                continue
+        return ret_dict
+
+
+# ========================================
+# Parser for 'show arp summary'
+# ========================================
+class ShowArpSummarySchema(MetaParser):
+    """
+    Schema for 'show arp summary'
+    """
+
+    schema = {
+        'total_num_of_entries':{
+            Any(): int
+        },
+        'interface_entries': {
+            Any(): int
+        },
+        Optional('maximum_entries'): {
+            Any(): int
+        },
+        Optional('arp_entry_threshold'): int,
+        Optional('permit_threshold'): int
+    }
+
+class ShowArpSummary(ShowArpSummarySchema):
+    """ Parser for 'show arp summary'"""
+    
+    cli_command = "show arp summary"
+
+    def cli(self, output=None):
+        if output is None:
+            out = self.device.execute(self.cli_command)
+        else:
+            out = output
+        
+        # initial variables
+        ret_dict = {}
+
+        # Total number of entries in the ARP table: 1233
+        p1 = re.compile(r'^Total +number +of +entries +in +the +ARP +table: +' \
+                '(?P<arp_table_entries>\d+)\.$')
+        
+        # Total number of Dynamic ARP entries: 1123
+        p2 = re.compile(r'^Total +number +of +(?P<entry_name>[\S\s]+): +' \
+                '(?P<num_of_entries>\d+)\.$')
+
+        # GigabitEthernet0/0/4  4
+        p3 = re.compile(r'^(?P<interface_name>[\w\/\.]+) +(?P<entry_count>\d+)')
+
+        # Learn ARP Entry Threshold is 409600 and Permit Threshold is 486400.
+        p4 = re.compile(r'^Learn +ARP +Entry +Threshold +is +' \
+            '(?P<arp_entry_threshold>\d+) +and +Permit +Threshold +is +' \
+            '(?P<permit_threshold>\d+).?$')
+
+        # Maximum limit of Learn ARP entry : 512000.
+        p5 = re.compile(r'^(?P<maximum_entries_name>[\w\W]+) +: +' \
+            '(?P<maximum_entries>\d+).$')
+
+        for line in out.splitlines():
+            line = line.strip()
+            # Total number of entries in the ARP table: 1233
+            m = p1.match(line)
+            if m:
+                group = m.groupdict()
+                total_num_of_entries = ret_dict.setdefault( \
+                    'total_num_of_entries', {})
+                total_num_of_entries.update({'arp_table_entries': 
+                    int(group['arp_table_entries'])})
+                continue
+            
+            # Total number of Dynamic ARP entries: 1123
+            m = p2.match(line)
+            if m:
+                group = m.groupdict()
+                total_num_of_entries = ret_dict.setdefault( \
+                    'total_num_of_entries', {})
+                key = group['entry_name'].replace(' ', '_').lower()
+                total_num_of_entries.update({key: int(group['num_of_entries'])})
+                continue
+
+            # GigabitEthernet0/0/4  4
+            m = p3.match(line)
+            if m:
+                group = m.groupdict()
+                interfaces = ret_dict.setdefault('interface_entries', {})
+                interfaces.update({Common.convert_intf_name(group['interface_name']) : 
+                    int(group['entry_count'])})
+                continue
+
+            # Learn ARP Entry Threshold is 409600 and Permit Threshold is 486400.
+            m = p4.match(line)
+            if m:
+                group = m.groupdict()
+                ret_dict.update({'arp_entry_threshold' : int(group['arp_entry_threshold'])})
+                ret_dict.update({'permit_threshold' : int(group['permit_threshold'])})
+                continue
+
+            # Maximum limit of Learn ARP entry : 512000.
+            m = p5.match(line)
+            if m:
+                group = m.groupdict()
+                key = group['maximum_entries_name'].replace(' ', '_').lower()
+                maximum_entries = ret_dict.setdefault('maximum_entries', {})
+                maximum_entries.update({key : int(group['maximum_entries'])})
 
         return ret_dict

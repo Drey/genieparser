@@ -15,6 +15,8 @@ NXOS parser for the following show commands:
     * show l2route mac-ip all detail
     * show l2route summary
     * show nve vni ingress-replication
+    * show l2route evpn mac-ip all
+    * show l2route evpn mac-ip evi <evi>
 """
 
 # Python
@@ -55,6 +57,8 @@ class ShowNvePeers(ShowNvePeersSchema):
        show nve peers"""
 
     cli_command = 'show nve peers'
+    exclude = [
+        'uptime']
 
     def cli(self, output=None):
         # excute command to get output
@@ -65,8 +69,8 @@ class ShowNvePeers(ShowNvePeersSchema):
 
         result_dict = {}
         # Interface Peer-IP          State LearnType Uptime   Router-Mac
-        # nve1      201.202.1.1      Up    CP        01:15:09 n/a
-        # nve1      204.1.1.1        Up    CP        00:03:05 5e00.0002.0007
+        # nve1      192.168.16.1      Up    CP        01:15:09 n/a
+        # nve1      192.168.106.1        Up    CP        00:03:05 5e00.0002.0007
 
         p1 = re.compile(r'^\s*(?P<nve_name>[\w\/]+) +(?P<peer_ip>[\w\.]+) +(?P<peer_state>[\w]+)'
                         ' +(?P<learn_type>[\w]+) +(?P<uptime>[\w\:]+) +(?P<router_mac>[\w\.\/]+)$')
@@ -427,7 +431,7 @@ class ShowNveInterfaceDetail(ShowNveInterfaceDetailSchema):
                     nve_dict.update({'host_reach_mode': group.pop('host_learning_mode').lower()})
                     continue
 
-                #  Source-Interface: loopback1 (primary: 201.11.11.11, secondary: 201.12.11.22)
+                #  Source-Interface: loopback1 (primary: 192.168.4.11, secondary: 192.168.196.22)
                 m = p5.match(line)
                 if m:
                     group = m.groupdict()
@@ -549,7 +553,7 @@ class ShowNveInterfaceDetail(ShowNveInterfaceDetailSchema):
                     nve_dict.update({'multi_src_intf_last_reinit_notify_type': group.pop('notif_sent').lower()})
                     continue
 
-                # Multisite bgw-if: loopback2 (ip: 101.101.101.101, admin: Down, oper: Down)
+                # Multisite bgw-if: loopback2 (ip: 10.4.101.101, admin: Down, oper: Down)
                 m = p21.match(line)
                 if m:
                     group = m.groupdict()
@@ -776,7 +780,7 @@ class ShowNveEthernetSegment(ShowNveEthernetSegmentSchema):
         #  My ordinal: 0
         #  DF timer start time: 00:00:00
         #  Config State: N/A
-        #  DF List: 201.0.0.55 201.0.0.66
+        #  DF List: 192.168.111.55 192.168.111.66
         #  ES route added to L2RIB: True
         #  EAD/ES routes added to L2RIB: False
         #  EAD/EVI route timer age: not running
@@ -989,7 +993,7 @@ class ShowL2routeEvpnEternetSegmentAll(ShowL2routeEvpnEternetSegmentAllSchema):
         index = 1
         # ESI                      Orig Rtr. IP Addr  Prod  Ifindex      NFN Bitmap
         # ------------------------ -----------------  ----- ----------- ----------
-        # 0300.0000.0001.2c00.0309 201.0.0.55         VXLAN nve1         64
+        # 0300.0000.0001.2c00.0309 192.168.111.55         VXLAN nve1         64
 
         p1 = re.compile(r'^\s*(?P<ethernet_segment>(?!ESI)[\w\.]+) +(?P<originating_rtr>[\d\.]+)'
                         ' +(?P<prod_name>[\w]+) +(?P<int_ifhdl>[\w\/]+) +(?P<client_nfn>[\w\.]+)$')
@@ -1059,6 +1063,8 @@ class ShowL2routeTopologyDetail(ShowL2routeTopologyDetailSchema):
         show l2route topology detail"""
 
     cli_command = 'show l2route topology detail'
+    exclude = [
+        'tx_id']
 
     def cli(self, output=None):
         # excute command to get output
@@ -1072,9 +1078,9 @@ class ShowL2routeTopologyDetail(ShowL2routeTopologyDetailSchema):
         # -----------   -------------   ----------
         # 101           Vxlan-10001     VNI: 10001
         #                   Encap:0 IOD:0 IfHdl:1224736769
-        #                   VTEP IP: 201.11.11.11
-        #                   Emulated IP: 201.12.11.22
-        #                   Emulated RO IP: 201.12.11.22
+        #                   VTEP IP: 192.168.4.11
+        #                   Emulated IP: 192.168.196.22
+        #                   Emulated RO IP: 192.168.196.22
         #                   TX-ID: 20 (Rcvd Ack: 0)
         #                   RMAC: 5e00.0005.0007, VRFID: 3
         #                   VMAC: 0200.c90c.0b16
@@ -1183,6 +1189,8 @@ class ShowL2routeMacAllDetail(ShowL2routeMacAllDetailSchema):
         show l2route mac all detail"""
 
     cli_command = 'show l2route mac all detail'
+    exclude = [
+        'mac']
 
     def cli(self, output=None):
         # excute command to get output
@@ -1194,7 +1202,7 @@ class ShowL2routeMacAllDetail(ShowL2routeMacAllDetailSchema):
         result_dict = {}
         # Topology    Mac Address    Prod   Flags         Seq No     Next-Hops
         # ----------- -------------- ------ ------------- ---------- ----------------
-        # 101         5e00.0002.0007 VXLAN  Rmac          0          204.1.1.1
+        # 101         5e00.0002.0007 VXLAN  Rmac          0          192.168.106.1
         #            Route Resolution Type: Regular
         #            Forwarding State: Resolved (PeerID: 2)
         #            Sent To: BGP
@@ -1279,8 +1287,8 @@ class ShowL2routeMacIpAllDetailSchema(MetaParser):
                         Any(): {
                             'mac_addr': str,
                             'mac_ip_prod_type': str,
-                            'mac_ip_flags': str,
-                            'seq_num': int,
+                            Optional('mac_ip_flags'): str,
+                            Optional('seq_num'): int,
                             'next_hop1': str,
                             'host_ip': str,
                             Optional('sent_to'): str,
@@ -1311,21 +1319,25 @@ class ShowL2routeMacIpAllDetail(ShowL2routeMacIpAllDetailSchema):
         result_dict = {}
         # Topology    Mac Address    Prod   Flags         Seq No     Host IP         Next-Hops
         # ----------- -------------- ------ ---------- --------------- ---------------
-        # 1001        fa16.3ec2.34fe BGP    --            0          5.1.10.11      204.1.1.1
-        # 1001        fa16.3ea3.fb66 HMM    --            0          5.1.10.55      Local
+        # 1001        fa16.3ec2.34fe BGP    --            0          10.36.10.11      192.168.106.1
+        # 1001        fa16.3ea3.fb66 HMM    --            0          10.36.10.55      Local
         #            Sent To: BGP
         #            SOO: 774975538
         #            L3-Info: 10001
+        # 101         fa16.3ed1.37b5 HMM    --            0          10.111.1.3    Local
+        # 101         fa16.3e04.e54a BGP    --            0          10.111.8.3    10.84.66.66 
+        # 101         0011.0000.0034 BGP  10.36.3.2                      10.70.0.2
         p1 = re.compile(r'^\s*(?P<topo_id>[\d]+) +(?P<mac_addr>[\w\.]+) +(?P<mac_ip_prod_type>[\w\,]+)'
-                        ' +(?P<mac_ip_flags>[\w\,\-]+) +(?P<seq_num>[\d]+) +(?P<host_ip>[\w\/\.]+)'
+                        '( +(?P<mac_ip_flags>[\w\,\-]+))?( +(?P<seq_num>[\d]+))? +(?P<host_ip>[\w\/\.]+)'
                         ' +(?P<next_hop1>[\w\/\.]+)$')
 
         p2 = re.compile(r'^\s*Sent +To: +(?P<sent_to>[\w]+)$')
         p3 = re.compile(r'^\s*SOO: +(?P<soo>[\d]+)$')
         p4 = re.compile(r'^\s*L3-Info: +(?P<l3_info>[\d]+)$')
+
         # Topology    Mac Address    Host IP         Prod   Flags         Seq No     Next-Hops
         # ----------- -------------- --------------- ------ ---------- ---------------
-        # 101         0000.9cfc.2596 100.101.1.3     BGP    --            0         23.23.23.23
+        # 101         0000.9cfc.2596 10.111.1.3     BGP    --            0         10.76.23.23
         p5 = re.compile(r'^\s*(?P<topo_id>[\d]+) +(?P<mac_addr>[\w\.]+) +(?P<host_ip>[\w\/\.]+)'
                         ' +(?P<mac_ip_prod_type>[\w\,]+)'
                         ' +(?P<mac_ip_flags>[\w\,\-]+) +(?P<seq_num>[\d]+)'
@@ -1344,11 +1356,12 @@ class ShowL2routeMacIpAllDetail(ShowL2routeMacIpAllDetailSchema):
                 mac_addr = group.pop('mac_addr')
                 topo_dict = result_dict.setdefault('topology', {}).setdefault('topo_id', {}).setdefault(topo_id,{}).\
                                         setdefault('mac_ip',{}).setdefault(mac_addr,{})
-
-                flags = group.pop('mac_ip_flags')
-                topo_dict.update({'mac_ip_flags':  flags.lower()})
+                if group['mac_ip_flags']:
+                    flags = group.pop('mac_ip_flags')
+                    topo_dict.update({'mac_ip_flags':  flags.lower()})
+                if group['seq_num']:
+                    topo_dict.update({'seq_num': int(group.pop('seq_num'))})
                 topo_dict.update({'mac_ip_prod_type':  group.pop('mac_ip_prod_type').lower()})
-                topo_dict.update({'seq_num': int(group.pop('seq_num'))})
                 topo_dict.update({'mac_addr': mac_addr})
                 topo_dict.update({'host_ip': group.pop('host_ip')})
                 topo_dict.update({'next_hop1': group.pop('next_hop1').lower()})
@@ -1425,6 +1438,12 @@ class ShowL2routeSummary(ShowL2routeSummarySchema):
         show l2route summary"""
 
     cli_command = 'show l2route summary'
+    exclude = [
+        'total_memory',
+        'total_mem',
+        'total_obj',
+        'memory',
+        'objects']
 
     def cli(self, output=None):
         # excute command to get output
@@ -1530,6 +1549,8 @@ class ShowL2routeFlAll(ShowL2routeFlAllSchema):
         show l2route fl all"""
 
     cli_command = 'show l2route fl all'
+    exclude = [
+        'peer_id']
 
     def cli(self, output=None):
         # excute command to get output
@@ -1809,7 +1830,7 @@ class ShowNveVniIngressReplication(ShowNveVniIngressReplicationSchema):
 
         # Interface VNI      Replication List  Source  Up Time
         # --------- -------- ----------------- ------- -------
-        # nve1      10101    7.7.7.7           BGP-IMET 1d02h
+        # nve1      10101    10.196.7.7           BGP-IMET 1d02h
 
         p1 = re.compile(r'^\s*(?P<nve_name>[\w]+) +(?P<vni>[\d]+)( +(?P<replication_list>[\w\.]+)'
                         ' +(?P<source>[\w\-]+) +(?P<uptime>[\w\:]+))?$')
@@ -2024,6 +2045,8 @@ class ShowFabricMulticastIpSaAdRoute(ShowFabricMulticastIpSaAdRouteSchema):
         show fabric multicast ipv4 sa-ad-route vrf all"""
 
     cli_command = ['show fabric multicast ipv4 sa-ad-route vrf {vrf}','show fabric multicast ipv4 sa-ad-route']
+    exclude = [
+        'uptime']
 
     def cli(self,vrf="",output=None):
         if vrf:
@@ -2045,7 +2068,7 @@ class ShowFabricMulticastIpSaAdRoute(ShowFabricMulticastIpSaAdRouteSchema):
         p1 = re.compile(r'^\s*VRF +\"(?P<vrf_name>\S+)\" +MVPN +SA +AD +Route +Database'
                         ' +VNI: +(?P<vnid>[\d]+)$')
 
-        # Src Active AD Route: (100.101.1.3/32, 238.8.4.101/32) uptime: 00:01:01
+        # Src Active AD Route: (10.111.1.3/32, 238.8.4.101/32) uptime: 00:01:01
         p2 = re.compile(r'^\s*Src +Active +AD +Route: +\((?P<saddr>[\w\/\.]+), +(?P<gaddr>[\w\/\.]+)\)'
                         ' +uptime: +(?P<uptime>[\w\.\:]+)$')
         #  Interested Fabric Nodes:
@@ -2213,7 +2236,31 @@ class ShowFabricMulticastIpL2Mroute(ShowFabricMulticastIpL2MrouteSchema):
 
         return result_dict
 
+# ====================================================
+#  parser for 'show l2route evpn mac-ip all'
+# ====================================================
+class ShowL2routeEvpnMacIpAll(ShowL2routeMacIpAllDetail):
+    """Parser for show l2route evpn mac-ip all"""
+    cli_command = 'show l2route evpn mac-ip all'
 
+    def cli(self, output=None):
+        if output is None:
+            show_output = self.device.execute(self.cli_command)
+        else:
+            show_output = output
+        return super().cli(output=show_output)
 
+# ====================================================
+#  parser for 'show l2route evpn mac-ip evi <evi>'
+# ====================================================
+class ShowL2routeEvpnMacIpEvi(ShowL2routeMacIpAllDetail):
+    """Parser for show l2route evpn mac-ip evi <evi>"""
+    cli_command = 'show l2route evpn mac-ip evi {evi}'
 
+    def cli(self, evi, output=None):
+        if output is None:
+            show_output = self.device.execute(self.cli_command.format(evi=evi))
+        else:
+            show_output = output
+        return super().cli(output=show_output)
 

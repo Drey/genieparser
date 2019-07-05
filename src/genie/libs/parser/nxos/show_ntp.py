@@ -66,6 +66,8 @@ class ShowNtpPeerStatus(ShowNtpPeerStatusSchema):
                 None: 'unsynchronized'}
 
     cli_command = 'show ntp peer-status'
+    exclude = [
+        'delay']
 
     def cli(self, output=None):
         # excute command to get output
@@ -83,7 +85,7 @@ class ShowNtpPeerStatus(ShowNtpPeerStatusSchema):
         p1 = re.compile(r'^Total +peers *: +(?P<total_peer>\d+)$')
 
         #     remote                                 local                                   st   poll   reach delay   vrf
-        # *1.1.1.1                                  0.0.0.0                                   8   16     377   0.01311 default
+        # *10.4.1.1                                  0.0.0.0                                   8   16     377   0.01311 default
 
         #    remote               local                 st   poll   reach delay   vrf
         # =127.127.1.0            10.100.100.1            8   64       0   0.00000
@@ -103,7 +105,7 @@ class ShowNtpPeerStatus(ShowNtpPeerStatusSchema):
             if m:
                 ret_dict['total_peers'] = int(m.groupdict()['total_peer'])
 
-            # *1.1.1.1                                  0.0.0.0                                   8   16     377   0.01311 default
+            # *10.4.1.1                                  0.0.0.0                                   8   16     377   0.01311 default
             # =127.127.1.0            10.100.100.1            8   64       0   0.00000
             m = p2.match(line)
             if m:

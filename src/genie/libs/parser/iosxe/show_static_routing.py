@@ -58,6 +58,8 @@ class ShowIpStaticRoute(ShowIpStaticRouteSchema):
        show ip static route vrf <vrf>
     """
     cli_command = ['show ip static route vrf {vrf}','show ip static route']
+    exclude = ['unnumbered', 'interface_ref',
+               '(Tunnel.*)', 'joined_group_addresses', 'ipv6']
 
     def cli(self, vrf="",output=None):
         if output is None:
@@ -86,10 +88,10 @@ class ShowIpStaticRoute(ShowIpStaticRouteSchema):
 
                 continue
 
-            # M  2.2.2.2/32 [1/0] via GigabitEthernet0/0 10.1.2.2 [A]
-            # M             [2/0] via GigabitEthernet0/1 20.1.2.2 [N]
-            # M             [3/0] via 20.1.2.2 [N]
-            # M  3.3.3.3/32 [1/0] via GigabitEthernet0/2 [A]
+            # M  10.16.2.2/32 [1/0] via GigabitEthernet0/0 10.1.2.2 [A]
+            # M             [2/0] via GigabitEthernet0/1 10.186.2.2 [N]
+            # M             [3/0] via 10.186.2.2 [N]
+            # M  10.36.3.3/32 [1/0] via GigabitEthernet0/2 [A]
             # M             [1/0] via GigabitEthernet0/3 [A]
             p2 = re.compile(r'^\s*(?P<code>[A-Z]+) +(?P<route>[\w\/\.]+)?'
                             ' +\[(?P<if_preference>[\d]+)\/(?P<if_preference2>[\d]+)\]'

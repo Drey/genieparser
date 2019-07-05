@@ -11,8 +11,10 @@ import re
 # Metaparser
 from genie.metaparser import MetaParser
 from genie.metaparser.util.schemaengine import Schema, Any, Optional, Or, And,\
-										 Default, Use
+										Default, Use
 from genie import parsergen
+from genie.libs.parser.utils.common import Common
+
 
 # =====================================
 # Schema for 'show ip arp'
@@ -21,39 +23,132 @@ class ShowIpArpSchema(MetaParser):
 	"""Schema for show ip arp"""
 
 	schema = {
-		Any():
-		  {'Age': str,
-		   'MAC Address': str,
-		   'Interface': str,
-		   'Address': str,
-		   Optional('Flags'): str}}
+		Optional('statistics'): {
+			Optional('entries_total'): int
+		},
+		'interfaces': {
+			Any(): {
+				'ipv4': {
+					'neighbors': {
+						Any(): {
+							'ip': str,
+							'link_layer_address': str,
+							'age': str,
+							'origin': str,
+							'physical_interface': str,
+							Optional('encap_type'): str,
+							Optional('flags'): str
+						}
+					}
+				}
+			}
+		}
+	}
 
 # =====================================
-# Parser for 'show ip arp'
+# Parser for:
+# 	show ip arp
+# 	show ip arp vrf {vrf}
+# 	show ip arp vrf all
 # =====================================
 class ShowIpArp(ShowIpArpSchema):
 	"""Parser for:
 		show ip arp
-		parser class - implements detail parsing mechanisms for cli,xml and yang output.
+		show ip arp vrf {vrf}
+		show ip arp vrf all
 	"""
-	cli_command = 'show ip arp'
+	cli_command = ['show ip arp', 'show ip arp vrf {vrf}']
+	exclude = ['age']
 
-	def cli(self,output=None):
+	def cli(self, vrf='', output=None):
+		if vrf:
+			cmd = self.cli_command[1].format(vrf=vrf)
+		else:
+			cmd = self.cli_command[0]
+			vrf = 'default'
+
 		if output is None:
-			out = self.device.execute(self.cli_command)
+			out = self.device.execute(cmd)
 		else:
 			out = output
-		 
-		if not 'Flags' not in out:
-			header = ['Address', 'Age', 'MAC Address', 'Interface']
-		else:
-			header = ['Address', 'Age', 'MAC Address', 'Interface', 'Flags']
-		result = parsergen.oper_fill_tabular(
-					  device_output=out,
-					  device_os= 'nxos',
-					  header_fields= header,
-					  index= [0])
-		return result.entries
+
+		res_dict = {}
+
+		# IP ARP Table for all contexts
+		# IP ARP Table for context vni_10100
+		# IP ARP Table for context default
+		p1 = re.compile(r'^IP +ARP +Table +for +(context +)?(?P<vrf>[\S]+)( +contexts)?$')
+
+		# Total number of entries: 11
+		p2 = re.compile(r'^Total +number +of +entries:\s+(?P<num_entries>\d+)$')
+
+		# 192.168.16.226 0 0006.d623.4008 ARPA GigabitEthernet1/1
+		# 10.111.1.3     00:09:20  fa16.3ed1.37b5  Vlan101         +
+		# 10.111.1.4     00:01:53  fa16.3ec5.fcab  Vlan101
+        # 10.23.90.2      00:01:05  fa16.3e5a.9eb3  Ethernet1/1.390
+		p3 = re.compile(r'^(?P<ip_address>[\d\.]+)\s+(?P<age>[\d:-]+)\s+(?P<mac_address>[\w\.]+)\s+'
+						r'((?P<encap_type>ARPA)\s+)?(?P<interface>\S+)(\s+(?P<flags>\S))?$')
+
+		for line in out.splitlines():
+			line = line.strip()
+
+			# IP ARP Table for all contexts
+			# IP ARP Table for context vni_10100
+			# IP ARP Table for context default
+			m = p1.match(line)
+			if m:
+				if 'interfaces' not in res_dict:
+					interfaces_dict = res_dict.setdefault('interfaces', {})
+				continue
+
+			# Total number of entries: 11
+			m = p2.match(line)
+			if m:
+				if 'statistics' not in res_dict:
+					statistics_dict = res_dict.setdefault('statistics', {})
+
+				groups = m.groupdict()
+				statistics_dict.update({'entries_total': int(groups['num_entries'])})
+				continue
+
+			# 192.168.16.226 0 0006.d623.4008 ARPA GigabitEthernet1/1
+			# 10.111.1.3     00:09:20  fa16.3ed1.37b5  Vlan101         +
+			# 10.111.1.4     00:01:53  fa16.3ec5.fcab  Vlan101
+			m = p3.match(line)
+			if m:
+				# Rare case (but found through run_parsers) - Only used to 
+				# setup data structure when output lines never match p1
+				if 'interfaces' not in res_dict:
+					interfaces_dict = res_dict.setdefault('interfaces', {})
+
+				groups = m.groupdict()
+				interface = groups['interface']
+				ip_address = groups['ip_address']
+				mac_address = groups['mac_address']
+				age = groups['age']
+
+				interface_dict = interfaces_dict.setdefault(interface, {})
+				neighbors_dict = interface_dict.setdefault('ipv4', {}).setdefault('neighbors', {})
+				ip_dict = neighbors_dict.setdefault(ip_address, {})
+				ip_dict.update({'ip': ip_address})
+				ip_dict.update({'link_layer_address': mac_address})
+				ip_dict.update({'physical_interface': interface})
+
+				if '-' in age:
+					origin = 'static'
+				else:
+					origin = 'dynamic'
+
+				ip_dict.update({'origin': origin})
+				ip_dict.update({'age': age})
+
+				if groups['encap_type']:
+					ip_dict.update({'encap_type': groups['encap_type']})
+
+				if groups['flags']:
+					ip_dict.update({'flags': groups['flags']})
+		
+		return res_dict
 
 # =======================================
 # Schema for 'show ip arp detail vrf all'
@@ -97,6 +192,7 @@ class ShowIpArpDetailVrfAll(ShowIpArpDetailVrfAllSchema):
 				'RO': 'Re-Originated Peer Sync Entry'}
 
 	cli_command = ['show ip arp detail vrf {vrf}', 'show ip arp detail']
+	exclude = ['age']
 
 	def cli(self, vrf=None, output=None):
 
@@ -248,23 +344,23 @@ class ShowIpArpstatisticsVrfAllSchema(MetaParser):
 				'dropped': int,
 				'drops_details': {
 					'mbuf_operation_failed': int,
-					'context_not_created': int,
-					'invalid_context': int,
-					'invalid_ifindex': int,
-					'invalid_src_ip': int,
-					'invalid_dest_ip': int,
-					'destnination_is_our_own_ip': int,
-					'unattached_ip': int,
-					'adjacency_couldnt_be_added': int,
-					'null_source_ip': int,
-					'null_source_mac': int,
-					'client_enqueue_failed': int,
-					'dest_not_reachable_for_proxy_arp': int,
+					Optional('context_not_created'): int,
+					Optional('invalid_context'): int,
+					Optional('invalid_ifindex'): int,
+					Optional('invalid_src_ip'): int,
+					Optional('invalid_dest_ip'): int,
+					Optional('destnination_is_our_own_ip'): int,
+					Optional('unattached_ip'): int,
+					Optional('adjacency_couldnt_be_added'): int,
+					Optional('null_source_ip'): int,
+					Optional('null_source_mac'): int,
+					Optional('client_enqueue_failed'): int,
+					Optional('dest_not_reachable_for_proxy_arp'): int,
 					Optional('dest_unreachable_for_enhanced_proxy'): int,
 					Optional('destnination_on_l2_port_tracked'): int,
-					'invalid_local_proxy_arp': int,
-					'invalid_proxy_arp': int,
-					'vip_is_not_active': int,
+					Optional('invalid_local_proxy_arp'): int,
+					Optional('invalid_proxy_arp'): int,
+					Optional('vip_is_not_active'): int,
 					Optional('arp_refresh_skipped_over_core_and_flooded'): int,
 				}
 			},
@@ -280,14 +376,14 @@ class ShowIpArpstatisticsVrfAllSchema(MetaParser):
 				Optional('anycast_proxy_arp'): int,
 				Optional('l2_port_track_proxy_arp'): int,
 				'tunneled': int,
-				'fastpath': int,
-				'snooped': int,
+				Optional('fastpath'): int,
+				Optional('snooped'): int,
 				'dropped': int,
 				Optional('dropped_server_port'): int,
 				'drops_details': {
 					'context_not_created': int,
 					'invalid_context': int,
-					'invalid_hardwaretype': int,
+					Optional('invalid_hardwaretype'): int,
 					'invalid_layer2_address_length': int,
 					'invalid_source_ip_address': int,
 					'no_mem_to_create_per_intf_structure': int,
@@ -368,13 +464,14 @@ class ShowIpArpstatisticsVrfAll(ShowIpArpstatisticsVrfAllSchema):
 
 		# Proxy arp 0, Local-Proxy arp 0,  Enhanced Proxy arp 0, Anycast proxy Proxy arp 0,  L2 Port-track Proxy arp 0,  Tunneled 0, Fastpath 0, Snooped 0, Dropped 28218  on Server Port 0 
 		# Proxy arp 0, Local-Proxy arp 0, Tunneled 0, Fastpath 0, Snooped 0, Dropped 4
-		p4 = re.compile(r'^\s*Proxy +arp +(?P<proxy_arp>[\w]+), +Local-Proxy +arp '
-			'+(?P<local_proxy_arp>[\w]+),( +Enhanced +Proxy +arp +(?P<enhanced_proxy_arp>[\w]+),)?'
-			'( +Anycast +proxy +Proxy +arp +(?P<anycast_proxy_arp>[\w]+),)?( +L2 +Port-track +Proxy +arp'
-			' +(?P<l2_port_track_proxy_arp>[\w]+),)?'
-			' +Tunneled +(?P<tunneled>[\w]+), +Fastpath +(?P<fastpath>[\w]+),'
-			' +Snooped +(?P<snooped>[\w]+), +Dropped +(?P<dropped>[\w]+)(,)?'
-			'( +on +Server +Port +(?P<dropped_server_port>[\w]+))?$')
+		p4 = re.compile(r'^Proxy +arp +(?P<proxy_arp>[\w]+), +Local-Proxy +'
+			'arp +(?P<local_proxy_arp>[\w]+),( +Enhanced +Proxy +arp +'
+			'(?P<enhanced_proxy_arp>[\w]+),)?( +Anycast +proxy +Proxy +'
+			'arp +(?P<anycast_proxy_arp>[\w]+),)?( +L2 +Port-track +Proxy +'
+			'arp +(?P<l2_port_track_proxy_arp>[\w]+),?)?( +Tunneled +'
+			'(?P<tunneled>[\w]+))?,?( +Fastpath +(?P<fastpath>[\w]+))?,?'
+			'( +Snooped +(?P<snooped>[\w]+))?,?( +Dropped +(?P<dropped>[\w]+))'
+			'?,?( +on +Server +Port +(?P<dropped_server_port>[\w]+))?')
 
 		# MBUF operation failed               : 0
 		p5 = re.compile(r'^\s*MBUF +operation +failed +: +(?P<mbuf_operation_failed>[\d]+)$')
@@ -954,5 +1051,4 @@ class ShowIpArpstatisticsVrfAll(ShowIpArpstatisticsVrfAllSchema):
 					int(m.groupdict()['statistic_number'])
 				key = ''
 				continue
-
 		return ret_dict

@@ -4,11 +4,16 @@
 import re
 import os
 import json
+import sys
 import warnings
+import logging
 import importlib
+
+
 from genie.libs import parser
 from genie.abstract import Lookup
 
+log = logging.getLogger(__name__)
 # Parser within Genie
 try:
     mod = importlib.import_module('genie.libs.parser')
@@ -26,6 +31,27 @@ else:
     with open(parsers) as f:
         parser_data = json.load(f)
 
+def format_output(parser_data, tab=0):
+    '''Format the parsed output in an aligned intended structure'''
+
+    s = ['{\n']
+    if parser_data is None:
+        return parser_data
+    for k,v in parser_data.items():
+        if isinstance(v, dict):
+            v = format_output(v, tab+2)
+        else:
+            v = repr(v)
+        s.append('%s%r: %s,\n' % ('  '*tab, k, v))
+    s.append('%s}' % ('  '*tab))
+    return ''.join(s)
+
+def get_parser_exclude(command, device):
+    try:
+        return get_parser(command, device)[0].exclude
+    except AttributeError:
+        return []
+
 def get_parser(command, device):
     '''From a show command and device, return parser class and kwargs if any'''
 
@@ -38,8 +64,14 @@ def get_parser(command, device):
         for token in lookup._tokens:
             if token in data:
                 data = data[token]
-
-        return _find_parser_cls(device, data), kwargs
+        try:
+            return _find_parser_cls(device, data), kwargs
+        except KeyError:
+            # Case when the show command is only found under one of
+            # the child level tokens
+            raise Exception("Could not find parser for "
+                            "'{c}' under {l}".format(
+                                c=command, l=lookup._tokens)) from None
     else:
         # Regex world!
         try:
@@ -52,6 +84,9 @@ def get_parser(command, device):
         return _find_parser_cls(device, found_data), kwargs
 
 def _find_command(command, data, device):
+    ratio = 0
+    max_lenght = 0
+    matches = None
     for key in data:
         if not '{' in key:
             # Disregard the non regex ones
@@ -59,15 +94,22 @@ def _find_command(command, data, device):
 
         # Okay... this is not optimal
         patterns = re.findall('{.*?}', key)
+        len_normal_words = len(set(key.split()) - set(patterns))
         reg = key
 
         for pattern in patterns:
             word = pattern.replace('{', '').replace('}', '')
-            new_pattern = '(?P<{p}>.*)'.format(p=word)
-            reg = re.sub(pattern, new_pattern, key)
+            new_pattern = r'(?P<{p}>\\S+)'.format(p=word) if word == 'vrf' or word == 'rd' or word == 'instance' or word=='vrf_type' else '(?P<{p}>.*)'.format(p=word)
+            reg = re.sub(pattern, new_pattern, reg)
+        reg += '$'
+        # Convert | to \|
+        reg = reg.replace('|', '\|')
 
         match = re.match(reg, command)
         if match:
+            if device.os not in data[key].keys():
+                continue
+
             # Found a match!
             lookup = Lookup.from_device(device, packages={'parser':parser})
             # Check if all the tokens exists; take the farthest one
@@ -75,8 +117,15 @@ def _find_command(command, data, device):
             for token in lookup._tokens:
                 if token in ret_data:
                     ret_data = ret_data[token]
-            return (ret_data, match.groupdict())
+
+            if len_normal_words > max_lenght:
+                max_lenght = len_normal_words
+                matches = (ret_data, match.groupdict())
+
+    if matches:
+        return matches
     raise SyntaxError('Could not find a parser match')
+
 
 def _find_parser_cls(device, data):
     lookup = Lookup.from_device(device, packages={'parser':parser})
@@ -117,12 +166,26 @@ class Common():
         convert = {'Eth': 'Ethernet',
                    'Lo': 'Loopback',
                    'Fa': 'FastEthernet',
-	               'Po': 'Port-channel',
+                   'Fas': 'FastEthernet',
+                   'Po': 'Port-channel',
+                   'PO': 'Port-channel',
                    'Null': 'Null',
                    'Gi': 'GigabitEthernet',
+                   'Gig': 'GigabitEthernet',
+                   'GE': 'GigabitEthernet',
                    'Te': 'TenGigabitEthernet',
                    'mgmt': 'mgmt',
-                   'Vl': 'Vlan'}
+                   'Vl': 'Vlan',
+                   'Tu': 'Tunnel',
+                   'Fe': '',
+                   'Hs': 'HSSI',
+                   'AT': 'ATM',
+                   'Et': 'Ethernet',
+                   'BD': 'BridgeDomain',
+                   'Se': 'Serial',
+                   'Fo': 'FortyGigabitEthernet',
+                   'Hu': 'HundredGigE'
+                   }
         m = re.search('([a-zA-Z]+)', intf) 
         m1 = re.search('([\d\/\.]+)', intf)
         if hasattr(m, 'group') and hasattr(m1, 'group'):
@@ -131,7 +194,10 @@ class Common():
             if int_type in convert.keys():
                 return(convert[int_type] + int_port)
             else:
-                return(intf)
+                # Unifying interface names
+                converted_intf = intf[0].capitalize()+intf[1:].replace(
+                    ' ','').replace('ethernet', 'Ethernet')
+                return(converted_intf)
         else:
             return(intf)
 
@@ -248,9 +314,9 @@ class Common():
             # if there is no __readonly__ but the command has outputs
             # should be warining
             if 'TABLE' in tag:
-            	warnings.warn('Tag "__readonly__" should exsist in output when '
-            		          'there are actual values in output')
-            	break
+                warnings.warn('Tag "__readonly__" should exsist in output when '
+                              'there are actual values in output')
+                break
 
         cli = cli.strip()
         # compare the commands
@@ -326,3 +392,52 @@ class Common():
                 for d in v:
                     for result in self.find_keys(key, d):
                         yield result
+
+
+    @classmethod
+    def combine_units_of_time(self, hours=None, minutes=None, seconds=None):
+        '''Combine seperate units of time to 'normal time': HH:MM:SS
+
+            Args (All are optional. Nothing returns 00:00:00):
+                hours (`int`): number of hours
+                minutes (`int`): number of minutes
+                seconds (`int`): number of seconds
+
+            Returns:
+                Standard time string
+
+            Raises:
+                None
+
+            example:
+
+                >>> convert_xml_time(minutes=500)
+                >>> "08:20:00"
+        '''
+        total_combined_seconds = 0
+
+        if hours:
+            total_combined_seconds += hours * 60 * 60
+
+        if minutes:
+            total_combined_seconds += minutes * 60
+
+        if seconds:
+            total_combined_seconds += seconds
+
+        final_seconds = total_combined_seconds % 60
+        if final_seconds <= 9:
+            final_seconds = "0{}".format(final_seconds)
+
+        final_minutes = (total_combined_seconds // 60) % 60
+        if final_minutes <= 9:
+            final_minutes = "0{}".format(final_minutes)
+
+        final_hours = (total_combined_seconds // 60) // 60
+        if final_hours <= 9:
+            final_hours = "0{}".format(final_hours)
+
+        normal_time = "{}:{}:{}".format(final_hours, final_minutes,
+                                        final_seconds)
+
+        return normal_time

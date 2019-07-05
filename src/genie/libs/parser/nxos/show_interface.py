@@ -143,13 +143,48 @@ class ShowInterfaceSchema(MetaParser):
 # Parser for 'show interface'
 # ===========================
 class ShowInterface(ShowInterfaceSchema):
-    """Parser for show interface"""
+    """Parser for show interface, show interface <interface>"""
 
-    cli_command = 'show interface'
+    cli_command = ['show interface', 'show interface {interface}']
+    exclude = [
+      'in_unicast_pkts',
+      'out_unicast_pkts',
+      'in_octets',
+      'out_octets',
+      'in_pkts',
+      'out_pkts',
+      'in_multicast_pkts',
+      'out_multicast_pkts',
+      'in_rate',
+      'out_rate',
+      'in_broadcast_pkts',
+      'out_broadcast_pkts',
+      'last_link_flapped',
+      'in_rate_pkts',
+      'out_rate_pkts',
+      'out_rate_bps',
+      'in_rate_bps',
+      'interface_reset',
+      'in_rate_pps',
+      'out_rate_pps',
+      'last_clear',
+      'out_jumbo_packets',
+      'in_jumbo_packets',
+      'rxload',
+      'txload',
+      'in_errors',
+      'mac_address',
+      'phys_address',
+      'in_crc_errors',
+      'reliability']
 
-    def cli(self, output=None):
+    def cli(self, interface="", output=None):
         if output is None:
-            out = self.device.execute(self.cli_command)
+            if interface:
+                cmd = self.cli_command[1].format(interface=interface)
+            else:
+                cmd = self.cli_command[0]
+            out = self.device.execute(cmd)
         else:
             out = output
 
@@ -983,16 +1018,57 @@ class ShowIpInterfaceVrfAllSchema(MetaParser):
 # Parser for 'show interface vrf all'
 # ===================================
 class ShowIpInterfaceVrfAll(ShowIpInterfaceVrfAllSchema):
-    """Parser for show ip interface vrf all"""
 
-    cli_command = 'show ip interface vrf all'
+    """Parser for show ip interface vrf all
+        show ip interface vrf <vrf>
+        show ip interface <interface> vrf all
+        show ip interface <interface> vrf <vrf>"""
 
-    def cli(self, output=None):
+    cli_command = ['show ip interface {interface} vrf {vrf}', 'show ip interface {interface} vrf all',
+                   'show ip interface vrf {vrf}', 'show ip interface vrf all']
+    exclude = [
+            'multicast_bytes_consumed',
+            'multicast_bytes_received',
+            'unicast_bytes_consumed',
+            'unicast_packets_consumed',
+            'unicast_bytes_originated',
+            'unicast_packets_originated',
+            'unicast_bytes_received',
+            'unicast_bytes_sent',
+            'unicast_packets_received',
+            'unicast_packets_sent',
+            'multicast_packets_consumed',
+            'multicast_packets_received',
+            'multicast_bytes_originated',
+            'multicast_bytes_sent',
+            'multicast_packets_originated',
+            'multicast_packets_sent',
+            'broadcast_bytes_consumed',
+            'broadcast_bytes_received',
+            'broadcast_packets_consumed',
+            'broadcast_packets_received',
+            'multicast_groups',
+            'int_stat_last_reset',
+            'unicast_bytes_forwarded',
+            'unicast_packets_forwarded',
+            'oil_uptime',
+            'iod',
+            '(tunnel.*)',
+            'multicast_groups_address']
+    def cli(self, interface='', vrf='', output=None):
+        if interface and vrf:
+            cmd = self.cli_command[0].format(interface=interface, vrf=vrf)
+        elif interface:
+            cmd = self.cli_command[1].format(interface=interface)
+        elif vrf:
+            cmd = self.cli_command[2].format(vrf=vrf)
+        else:
+            cmd = self.cli_command[3]
         if output is None:
-            out = self.device.execute(self.cli_command)
+            out = self.device.execute(cmd)
         else:
             out = output
-
+        del interface # delete this to prevent use from below due to scope
         ip_interface_vrf_all_dict = {}
         temp_intf = []
 
@@ -1061,7 +1137,7 @@ class ShowIpInterfaceVrfAll(ShowIpInterfaceVrfAllSchema):
                 continue
 
             # IP address: 10.4.4.4, IP subnet: 10.4.4.0/24 secondary
-            # IP address: 4.4.4.4, IP subnet: 4.4.4.0/24
+            # IP address: 10.64.4.4, IP subnet: 10.64.4.0/24
             p3 = re.compile(r'^\s*IP *address: *(?P<ip>[0-9\.]+), *IP'
                              ' *subnet: *(?P<ip_subnet>[a-z0-9\.]+)\/'
                              '(?P<prefix_length>[0-9]+)'
@@ -1103,7 +1179,7 @@ class ShowIpInterfaceVrfAll(ShowIpInterfaceVrfAllSchema):
 
                 continue
 
-            # IP address: 201.1.34.1, IP subnet: 201.1.34.0/24 route-preference: 0, tag: 0
+            # IP address: 192.168.106.1, IP subnet: 192.168.106.0/24 route-preference: 0, tag: 0
             p3_1 = re.compile(r'^\s*IP *address: *(?P<ip>[0-9\.]+), *IP'
                                ' *subnet: *(?P<ip_subnet>[a-z0-9\.]+)\/'
                                '(?P<prefix_length>[0-9\,]+)(?: *route-preference:'
@@ -1302,7 +1378,7 @@ class ShowIpInterfaceVrfAll(ShowIpInterfaceVrfAllSchema):
 
             #IP unicast reverse path forwarding: none
             p16 = re.compile(r'^\s*IP *unicast *reverse *path *forwarding:'
-                              ' *(?P<unicast_reverse_path>[a-z]+)$')
+                              ' *(?P<unicast_reverse_path>\w+)$')
             m = p16.match(line)
             if m:
                 unicast_reverse_path = m.groupdict()['unicast_reverse_path']
@@ -1312,7 +1388,7 @@ class ShowIpInterfaceVrfAll(ShowIpInterfaceVrfAllSchema):
                 continue
 
             #IP load sharing: none 
-            p17 = re.compile(r'^\s*IP *load *sharing: *(?P<load_sharing>[a-z]+)$')
+            p17 = re.compile(r'^\s*IP *load *sharing: *(?P<load_sharing>\w+)$')
             m = p17.match(line)
             if m:
                 load_sharing = m.groupdict()['load_sharing']
@@ -1582,13 +1658,28 @@ class ShowVrfAllInterfaceSchema(MetaParser):
 # Parser for 'show vrf all interface'
 # ===================================
 class ShowVrfAllInterface(ShowVrfAllInterfaceSchema):
-    """Parser for show vrf all interface"""
+    """Parser for show vrf all interface
+                show vrf <vrf> interface <interface>
+                show vrf <vrf> interface
+                show vrf all interface <interface>"""
 
-    cli_command = 'show vrf all interface'
+    cli_command = ['show vrf {vrf} interface {interface}',
+                   'show vrf all interface {interface}',
+                   'show vrf {vrf} interface', 'show vrf all interface']
+    exclude = [
+        '(Null.*)']
 
-    def cli(self, output=None):
+    def cli(self, interface='', vrf='', output=None):
+        if interface and vrf:
+            cmd = self.cli_command[0].format(interface=interface, vrf=vrf)
+        elif interface:
+            cmd = self.cli_command[1].format(interface=interface)
+        elif vrf:
+            cmd = self.cli_command[2].format(vrf=vrf)
+        else:
+            cmd = self.cli_command[3]
         if output is None:
-            out = self.device.execute(self.cli_command)
+            out = self.device.execute(cmd)
         else:
             out = output
 
@@ -1638,23 +1729,23 @@ class ShowInterfaceSwitchportSchema(MetaParser):
     schema = {
         Any():
             {'switchport_status': str,
-             'switchport_monitor': str,
-             'switchport_mode': str,
-             'access_vlan': int,
+             Optional('switchport_monitor'): str,
+             Optional('switchport_mode'): str,
+             Optional('access_vlan'): int,
              'switchport_enable': bool,
              Optional('access_vlan_mode'): str,
-             'native_vlan': int,
+             Optional('native_vlan'): int,
              Optional('native_vlan_mode'): str,
-             'trunk_vlans': str,
-             'admin_priv_vlan_primary_host_assoc': str,
-             'admin_priv_vlan_secondary_host_assoc': str,
-             'admin_priv_vlan_primary_mapping': str,
-             'admin_priv_vlan_secondary_mapping': str,
-             'admin_priv_vlan_trunk_native_vlan': str,
-             'admin_priv_vlan_trunk_encapsulation': str,
-             'admin_priv_vlan_trunk_normal_vlans': str,
-             'admin_priv_vlan_trunk_private_vlans': str,
-             'operational_private_vlan': str
+             Optional('trunk_vlans'): str,
+             Optional('admin_priv_vlan_primary_host_assoc'): str,
+             Optional('admin_priv_vlan_secondary_host_assoc'): str,
+             Optional('admin_priv_vlan_primary_mapping'): str,
+             Optional('admin_priv_vlan_secondary_mapping'): str,
+             Optional('admin_priv_vlan_trunk_native_vlan'): str,
+             Optional('admin_priv_vlan_trunk_encapsulation'): str,
+             Optional('admin_priv_vlan_trunk_normal_vlans'): str,
+             Optional('admin_priv_vlan_trunk_private_vlans'): str,
+             Optional('operational_private_vlan'): str
             },
         }
                     
@@ -1662,13 +1753,18 @@ class ShowInterfaceSwitchportSchema(MetaParser):
 # Parser for 'show interface switchport'
 # ======================================
 class ShowInterfaceSwitchport(ShowInterfaceSwitchportSchema):
-    """Parser for show interface switchport"""
+    """Parser for show interface switchport
+                show interface <interface> switchport"""
 
-    cli_command ='show interface switchport'
+    cli_command =['show interface switchport', 'show interface {interface} switchport']
 
-    def cli(self, output=None):
+    def cli(self, interface="", output=None):
         if output is None:
-            out = self.device.execute(self.cli_command)
+            if interface:
+                cmd = self.cli_command[1].format(interface=interface)
+            else:
+                cmd = self.cli_command[0]
+            out = self.device.execute(cmd)
         else:
             out = output
 
@@ -1708,8 +1804,8 @@ class ShowInterfaceSwitchport(ShowInterfaceSwitchportSchema):
                 interface_switchport_dict[interface]['switchport_monitor'] = switchport_monitor
                 continue
 
-            # Operational Mode: trunk
-            p4 = re.compile(r'^\s*Operational *Mode: *(?P<switchport_mode>\S+)$')
+            # Operational Mode: Private-vlan host
+            p4 = re.compile(r'^\s*Operational *Mode: *(?P<switchport_mode>[\w\s-]+)$')
             m = p4.match(line)
             if m:
                 interface_switchport_dict[interface]['switchport_mode'] = m.groupdict()['switchport_mode'] 
@@ -1717,8 +1813,9 @@ class ShowInterfaceSwitchport(ShowInterfaceSwitchportSchema):
 
             # Access Mode VLAN: 1 (default)
             # Access Mode VLAN: 7 (server-vlan7)
+            # Access Mode VLAN: 551 (Test_VM_192.168.1.0/24)
             p5 = re.compile(r'^\s*Access *Mode *VLAN: *(?P<access_vlan>[0-9]+)'
-                             '(?: *\((?P<access_vlan_mode>[\w\-\s]+)\))?$')
+                             '(?: *\((?P<access_vlan_mode>[\S\s]+)\))?$')
             m = p5.match(line)
             if m:
                 access_vlan = int(m.groupdict()['access_vlan'])
@@ -1733,9 +1830,10 @@ class ShowInterfaceSwitchport(ShowInterfaceSwitchportSchema):
             # Trunking Native Mode VLAN: 1 (default)
             # Trunking Native Mode VLAN: 200 (VLAN0200)
             # Trunking Native Mode VLAN: 3967 (Vlan not created)
+            # Trunking Native Mode VLAN: 451 (VM_Machines_192.168.1.0/24)
             p6 = re.compile(r'^\s*Trunking *Native *Mode *VLAN:'
                              ' *(?P<native_vlan>[0-9]+)'
-                             ' *\((?P<native_vlan_mode>[a-zA-Z0-9\-\_\s]+)\)$')
+                             ' *\((?P<native_vlan_mode>[\S\s]+)\)$')
             m = p6.match(line)
             if m:
                 native_vlan = int(m.groupdict()['native_vlan'])
@@ -1756,10 +1854,10 @@ class ShowInterfaceSwitchport(ShowInterfaceSwitchportSchema):
                 interface_switchport_dict[interface]['trunk_vlans'] = trunk_vlans
                 continue
 
-            #Administrative private-vlan primary host-association: none
+            # Administrative private-vlan primary host-association: 2000
             p8 = re.compile(r'^\s*Administrative *private-vlan *primary'
                              ' *host-association:'
-                             ' *(?P<admin_priv_vlan_primary_host_assoc>[a-z]+)$')
+                             ' *(?P<admin_priv_vlan_primary_host_assoc>\w+)$')
             m = p8.match(line)
             if m:
                 admin_priv_vlan_primary_host_assoc = m.groupdict()['admin_priv_vlan_primary_host_assoc']
@@ -1767,10 +1865,10 @@ class ShowInterfaceSwitchport(ShowInterfaceSwitchportSchema):
                 interface_switchport_dict[interface]['admin_priv_vlan_primary_host_assoc'] = admin_priv_vlan_primary_host_assoc
                 continue
 
-            #Administrative private-vlan secondary host-association: none
+            # Administrative private-vlan secondary host-association: 110
             p9 = re.compile(r'^\s*Administrative *private-vlan *secondary'
                              ' *host-association:'
-                             ' *(?P<admin_priv_vlan_secondary_host_assoc>[a-z]+)$')
+                             ' *(?P<admin_priv_vlan_secondary_host_assoc>\w+)$')
             m = p9.match(line)
             if m:
                 admin_priv_vlan_secondary_host_assoc\
@@ -1783,7 +1881,7 @@ class ShowInterfaceSwitchport(ShowInterfaceSwitchportSchema):
             #Administrative private-vlan primary mapping: none
             p10 = re.compile(r'^\s*Administrative *private-vlan *primary'
                              ' *mapping:'
-                             ' *(?P<admin_priv_vlan_primary_mapping>[a-z]+)$')
+                             ' *(?P<admin_priv_vlan_primary_mapping>\w+)$')
             m = p10.match(line)
             if m:
                 admin_priv_vlan_primary_mapping\
@@ -1797,7 +1895,7 @@ class ShowInterfaceSwitchport(ShowInterfaceSwitchportSchema):
             #Administrative private-vlan secondary mapping: none
             p11 = re.compile(r'^\s*Administrative *private-vlan *secondary'
                              ' *mapping:'
-                             ' *(?P<admin_priv_vlan_secondary_mapping>[a-z]+)$')
+                             ' *(?P<admin_priv_vlan_secondary_mapping>\w+)$')
             m = p11.match(line)
             if m:
                 admin_priv_vlan_secondary_mapping = m.groupdict()['admin_priv_vlan_secondary_mapping']
@@ -1806,10 +1904,10 @@ class ShowInterfaceSwitchport(ShowInterfaceSwitchportSchema):
                 ['admin_priv_vlan_secondary_mapping'] = admin_priv_vlan_secondary_mapping
                 continue
 
-            #Administrative private-vlan trunk native VLAN: none
+            #Administrative private-vlan trunk native VLAN: 1
             p12 = re.compile(r'^\s*Administrative *private-vlan *trunk *native'
                              ' *VLAN:'
-                             ' *(?P<admin_priv_vlan_trunk_native_vlan>[a-z]+)$')
+                             ' *(?P<admin_priv_vlan_trunk_native_vlan>\w+)$')
             m = p12.match(line)
             if m:
                 admin_priv_vlan_trunk_native_vlan = m.groupdict()['admin_priv_vlan_trunk_native_vlan']
@@ -1833,7 +1931,7 @@ class ShowInterfaceSwitchport(ShowInterfaceSwitchportSchema):
             #Administrative private-vlan trunk normal VLANs: none
             p14 = re.compile(r'^\s*Administrative *private-vlan *trunk'
                              ' *normal VLANs:'
-                             ' *(?P<admin_priv_vlan_trunk_normal_vlans>[a-z]+)$')
+                             ' *(?P<admin_priv_vlan_trunk_normal_vlans>\w+)$')
             m = p14.match(line)
             if m:
                 admin_priv_vlan_trunk_normal_vlans = m.groupdict()['admin_priv_vlan_trunk_normal_vlans']
@@ -1846,7 +1944,7 @@ class ShowInterfaceSwitchport(ShowInterfaceSwitchportSchema):
             # Administrative private-vlan trunk private VLANs: none(0 none)
             p15 = re.compile(r'^\s*Administrative *private-vlan *trunk'
                              ' *private VLANs:'
-                             ' *(?P<admin_priv_vlan_trunk_private_vlans>[a-z]+)(?P<dummy>.*)?$')
+                             ' *(?P<admin_priv_vlan_trunk_private_vlans>\w+)(?P<dummy>.*)?$')
             m = p15.match(line)
             if m:
                 admin_priv_vlan_trunk_private_vlans = m.groupdict()['admin_priv_vlan_trunk_private_vlans']
@@ -1855,9 +1953,9 @@ class ShowInterfaceSwitchport(ShowInterfaceSwitchportSchema):
                 ['admin_priv_vlan_trunk_private_vlans'] = admin_priv_vlan_trunk_private_vlans
                 continue
 
-            #Operational private-vlan: none
+            # Operational private-vlan: (2500,101)
             p16 = re.compile(r'^\s*Operational *private-vlan:'
-                             ' *(?P<operational_private_vlan>[a-z]+)$')
+                             ' *(?P<operational_private_vlan>\S+)$')
             m = p16.match(line)
             if m:
                 operational_private_vlan = m.groupdict()['operational_private_vlan']
@@ -1865,7 +1963,7 @@ class ShowInterfaceSwitchport(ShowInterfaceSwitchportSchema):
                 interface_switchport_dict[interface]\
                 ['operational_private_vlan'] = operational_private_vlan
                 continue
-
+        
         return interface_switchport_dict
 
 
@@ -1927,16 +2025,43 @@ class ShowIpv6InterfaceVrfAllSchema(MetaParser):
 # Parser for 'show ipv6 interface vrf all'
 # ========================================
 class ShowIpv6InterfaceVrfAll(ShowIpv6InterfaceVrfAllSchema):
-    """Parser for ipv6 interface vrf all"""
+    """Parser for show ipv6 interface vrf all
+        show ipv6 interface vrf <vrf>
+        show ipv6 interface <interface> vrf all
+        show ipv6 interface <interface> vrf <vrf>"""
 
-    cli_command = 'show ipv6 interface vrf all'
+    cli_command = ['show ipv6 interface {interface} vrf {vrf}', 'show ipv6 interface {interface} vrf all',
+                   'show ipv6 interface vrf {vrf}', 'show ipv6 interface vrf all']
+    exclude = [
+        'multicast_bytes_consumed',
+        'multicast_packets_consumed',
+        'multicast_bytes_originated',
+        'multicast_packets_originated',
+        'unicast_bytes_consumed',
+        'unicast_packets_consumed',
+        'unicast_bytes_originated',
+        'unicast_packets_originated',
+        'ipv6_multicast_groups',
+        'iod',
+        'multicast_groups',
+        'unicast_bytes_forwarded',
+        'unicast_packets_forwarded',
+        'ipv6_link_local']
 
-    def cli(self, output=None):
+    def cli(self, interface='', vrf='', output=None):
+        if interface and vrf:
+            cmd = self.cli_command[0].format(interface=interface, vrf=vrf)
+        elif interface:
+            cmd = self.cli_command[1].format(interface=interface)
+        elif vrf:
+            cmd = self.cli_command[2].format(vrf=vrf)
+        else:
+            cmd = self.cli_command[3]
         if output is None:
-            out = self.device.execute(self.cli_command)
+            out = self.device.execute(cmd)
         else:
             out = output
-
+        del interface
         # Init variables
         ipv6_interface_dict = {}
         ipv6_addresses = None
@@ -2058,7 +2183,7 @@ class ShowIpv6InterfaceVrfAll(ShowIpv6InterfaceVrfAllSchema):
 
             #IPv6 virtual addresses configured: none
             p6 = re.compile(r'^\s*IPv6 *virtual *addresses *configured:'
-                             ' *(?P<ipv6_virtual_add>[a-z]+)$')
+                             ' *(?P<ipv6_virtual_add>\w+)$')
             m = p6.match(line)
             if m:
                 ipv6_virtual_add = m.groupdict()['ipv6_virtual_add']
@@ -2184,7 +2309,7 @@ class ShowIpv6InterfaceVrfAll(ShowIpv6InterfaceVrfAllSchema):
 
             #IPv6 unicast reverse path forwarding: none
             p14 = re.compile(r'^\s*IPv6 *unicast *reverse *path *forwarding:'
-                              ' *(?P<ipv6_unicast_rev_path_forwarding>[a-z]+)$')
+                              ' *(?P<ipv6_unicast_rev_path_forwarding>\w+)$')
             m = p14.match(line)
             if m:
                 ipv6_unicast_rev_path_forwarding = m.groupdict()\
@@ -2197,7 +2322,7 @@ class ShowIpv6InterfaceVrfAll(ShowIpv6InterfaceVrfAllSchema):
 
             #IPv6 load sharing: none
             p15 = re.compile(r'^\s*IPv6 *load *sharing:'
-                             ' *(?P<ipv6_load_sharing>[a-z]+)$')
+                             ' *(?P<ipv6_load_sharing>\w+)$')
             m = p15.match(line)
             if m:
                 ipv6_load_sharing = m.groupdict()['ipv6_load_sharing']
@@ -2313,6 +2438,8 @@ class ShowIpInterfaceBrief(ShowIpInterfaceBriefSchema):
     # (nested dict) that has the same data structure across all supported
     # parsing mechanisms (cli(), yang(), xml()).
     cli_command = 'show ip interface brief'
+    exclude = [
+        '(tunnel.*)']
 
     def __init__ (self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -2454,6 +2581,8 @@ class ShowInterfaceBrief(ShowInterfaceBriefSchema):
     # (nested dict) that has the same data structure across all supported
     # parsing mechanisms (cli(), yang(), xml()).
     cli_command = 'show interface brief'
+    exclude = [
+    'reason']
 
     def __init__ (self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -2794,7 +2923,7 @@ class ShowNveInterface(ShowNveInterfaceSchema):
             ' +State: +(?P<state>[\w]+)\, +encapsulation:'
             ' +(?P<encapsulation>[\w]+)$')
 
-        # Source-Interface: loopback0 (primary: 2.0.0.1, secondary: 0.0.0.0)
+        # Source-Interface: loopback0 (primary: 10.4.0.1, secondary: 0.0.0.0)
         p2 = re.compile(r'^\s*Source-Interface: +(?P<src_intf>[a-zA-Z0-9\-]+)'
             ' +\(primary: +(?P<primary>[a-zA-Z0-9\.]+)\, +secondary:'
             ' +(?P<secondary>[a-zA-Z0-9\.]+)\)$')

@@ -71,7 +71,7 @@ class ShowIpInterfaceBrief(ShowIpInterfaceBriefSchema):
         else:
             out = output
 
-        # Loopback500                    200.0.0.1       Up              Up       default
+        # Loopback500                    192.168.220.1       Up              Up       default
         p = re.compile(r'^\s*(?P<interface>[a-zA-Z0-9\/\.\-]+) '
             '+(?P<ip_address>[a-z0-9\.]+) +(?P<interface_status>[a-zA-Z]+) '
             '+(?P<protocol_status>[a-zA-Z]+) +(?P<vrf_name>[A-Za-z0-9]+)$')
@@ -558,13 +558,25 @@ class ShowInterfacesDetailSchema(MetaParser):
 
 
 class ShowInterfacesDetail(ShowInterfacesDetailSchema):
-    """Parser for show interface detail"""
+    """Parser for show interface detail
+                    show interface <interface> detail
+    """
 
-    cli_command = 'show interface detail'
+    cli_command = ['show interface detail', 'show interface {interface} detail']
+    exclude = ['in_octets', 'in_pkts', 'out_octets', 'out_pkts', 'in_rate', 
+        'in_rate_pkts', 'out_rate', 'out_rate_pkts', 'last_link_flapped', 'in_multicast_pkts',
+        'out_multicast_pkts', 'last_input', 'last_output', 'in_crc_errors', 'in_frame_errors',
+        'reliability', 'in_discards', 'in_broadcast_pkts', 'out_broadcast_pkts', 'rxload', 'txload', 
+        'interface_state', 'in_unknown_protos', 'last_clear', 'carrier_transitions', 'in_giants']
 
-    def cli(self, output=None):
+
+    def cli(self, interface='', output=None):
         if output is None:
-            out = self.device.execute(self.cli_command)
+            if interface:
+                cmd = self.cli_command[1].format(interface=interface)
+            else:
+                cmd = self.cli_command[0]
+            out = self.device.execute(cmd)
         else:
             out = output
 
@@ -1293,13 +1305,22 @@ class ShowIpv4VrfAllInterfaceSchema(MetaParser):
         }
 
 class ShowIpv4VrfAllInterface(ShowIpv4VrfAllInterfaceSchema):
-    """Parser for show ipv4 vrf all interface"""
+    """Parser for show ipv4 vrf all interface
+                    show ipv4 vrf <vrf> interface"""
 
-    cli_command = 'show ipv4 vrf all interface'
+    cli_command = ['show ipv4 vrf {vrf} interface {interface}',
+                   'show ipv4 vrf {vrf} interface', 'show ipv4 vrf all interface']
 
-    def cli(self, output=None):
+    def cli(self, interface='', vrf='', output=None):
         if output is None:
-            out = self.device.execute(self.cli_command)
+            if vrf:
+                if interface and vrf != 'all':
+                    cmd = self.cli_command[0].format(interface=interface, vrf=vrf)
+                else:
+                    cmd = self.cli_command[1].format(vrf=vrf)
+            else:
+                cmd = self.cli_command[2]
+            out = self.device.execute(cmd)
         else:
             out = output
 
@@ -1337,7 +1358,7 @@ class ShowIpv4VrfAllInterface(ShowIpv4VrfAllInterfaceSchema):
                 ipv4_vrf_all_interface_dict[interface]['vrf_id'] = vrf_id
                 continue
 
-            # Interface is unnumbered.  Using address of Loopback11 (111.111.111.111/32)
+            # Interface is unnumbered.  Using address of Loopback11 (10.69.111.111/32)
             p2_1 = re.compile(r'^\s*Interface is unnumbered. +Using +address'
                                ' +of +(?P<unnumbered_intf_ref>\S+)'
                                ' +\((?P<ip>[0-9\.]+)\/(?P<prefix_length>[0-9]+)\)$')
@@ -1640,11 +1661,22 @@ class ShowIpv6VrfAllInterfaceSchema(MetaParser):
 class ShowIpv6VrfAllInterface(ShowIpv6VrfAllInterfaceSchema):
     """Parser for show ipv6 vrf all interface"""
 
-    cli_command = 'show ipv6 vrf all interface'
+    cli_command = ['show ipv6 vrf {vrf} interface {interface}',
+                   'show ipv6 vrf {vrf} interface', 'show ipv6 vrf all interface']
 
-    def cli(self, output=None):
+    exclude = ['complete_protocol_adj', 'complete_glean_adj', 'ipv6_groups', 'ipv6_link_local']
+
+
+    def cli(self, interface='', vrf='', output=None):
         if output is None:
-            out = self.device.execute(self.cli_command)
+            if vrf:
+                if interface and vrf != 'all':
+                    cmd = self.cli_command[0].format(interface=interface, vrf=vrf)
+                else:
+                    cmd = self.cli_command[1].format(vrf=vrf)
+            else:
+                cmd = self.cli_command[2]
+            out = self.device.execute(cmd)
         else:
             out = output
 
@@ -2156,13 +2188,18 @@ class ShowEthernetTagsSchema(MetaParser):
         }
 
 class ShowEthernetTags(ShowEthernetTagsSchema):
-    """Parser for show ethernet tags"""
+    """Parser for show ethernet tags
+    show ethernet tags <interface>"""
 
-    cli_command = 'show ethernet tags'
+    cli_command = ['show ethernet tags', 'show ethernet tags {interface}']
 
-    def cli(self, output=None):
+    def cli(self, interface='', output=None):
         if output is None:
-            out = self.device.execute(self.cli_command)
+            if interface:
+                cmd = self.cli_command[1].format(interface=interface)
+            else:
+                cmd = self.cli_command[0]
+            out = self.device.execute(cmd)
         else:
             out = output
 
@@ -2253,12 +2290,14 @@ class ShowInterfacesAccounting(ShowInterfacesAccountingSchema):
         show interfaces accounting
         show interfaces <interface> accounting
     """
-    cli_command = ['show interfaces {intf} accounting','show interfaces accounting']
+    cli_command = ['show interfaces {interface} accounting','show interfaces accounting']
+    exclude = ['pkts_in', 'pkts_out', 'chars_in', 'chars_out']
 
-    def cli(self, intf=None, output=None):
+
+    def cli(self, interface=None, output=None):
         if output is None:
-            if intf:
-                cmd = self.cli_command[0].format(intf=intf)
+            if interface:
+                cmd = self.cli_command[0].format(interface=interface)
             else:
                 cmd = self.cli_command[1]
             out = self.device.execute(cmd)
@@ -2269,7 +2308,7 @@ class ShowInterfacesAccounting(ShowInterfacesAccountingSchema):
         ret_dict = {}
 
         # initial regexp pattern
-        p1 = re.compile(r'^\s*(?P<interface>[a-zA-Z]+(\d+\/)+\d+)')
+        p1 = re.compile(r'^\s*(?P<interface>\S+)\s*$')
         p2 = re.compile(r'^\s*(?P<protocol>\S+)\s+(?P<pkts_in>\d+)\s+'
                          '(?P<chars_in>\d+)\s+(?P<pkts_out>\d+)\s+'
                          '(?P<chars_out>\d+)')

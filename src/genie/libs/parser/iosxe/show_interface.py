@@ -74,6 +74,9 @@ class ShowInterfacesSchema(MetaParser):
                 Optional('mac_address'): str,
                 Optional('phys_address'): str,
                 Optional('delay'): int,
+                Optional('carrier_delay'): int,
+                Optional('carrier_delay_up'): int,
+                Optional('carrier_delay_down'): int,
                 Optional('keepalive'): int,
                 Optional('auto_negotiate'): bool,
                 Optional('arp_type'): str,
@@ -175,6 +178,16 @@ class ShowInterfaces(ShowInterfacesSchema):
                   show interfaces <interface>"""
 
     cli_command = ['show interfaces','show interfaces {interface}']
+    exclude = ['in_octets', 'in_pkts', 'out_octets', 'out_pkts', 
+        'in_rate', 'in_rate_pkts', 'out_rate', 'out_rate_pkts', 
+        'input_queue_size', 'in_broadcast_pkts', 'in_multicast_pkts',
+        'last_output', 'out_unknown_protocl_drops', 'last_input',
+        'input_queue_drops', 'out_interface_resets', 'rxload',
+        'txload', 'last_clear', 'in_crc_errors', 'in_errors',
+        'in_giants', 'unnumbered', 'mac_address', 'phys_address',
+        'out_lost_carrier', '(Tunnel.*)', 'input_queue_flushes',
+        'reliability']
+
 
     def cli(self,interface="",output=None):
         if output is None:
@@ -217,10 +230,10 @@ class ShowInterfaces(ShowInterfacesSchema):
                     interface_dict[interface]['port_channel']\
                         ['port_channel_member'] = False
 
-                if enabled and 'up' in enabled:
-                    interface_dict[interface]['enabled'] = True
-                else:
+                if 'administratively down' in enabled or 'delete' in enabled:
                     interface_dict[interface]['enabled'] = False
+                else:
+                    interface_dict[interface]['enabled'] = True
 
                 if line_protocol:
                     interface_dict[interface]\
@@ -257,7 +270,7 @@ class ShowInterfaces(ShowInterfacesSchema):
                 continue
 
             # Description: desc
-            # Description: Pim Register Tunnel (Encap) for RP 11.10.1.1
+            # Description: Pim Register Tunnel (Encap) for RP 10.186.1.1
             p3 = re.compile(r'^Description: *(?P<description>.*)$')
             m = p3.match(line)
             if m:
@@ -312,7 +325,7 @@ class ShowInterfaces(ShowInterfacesSchema):
             # MTU 1500 bytes, BW 768 Kbit/sec, DLY 3330 usec,
             # MTU 1500 bytes, BW 10000 Kbit, DLY 1000 usec, 
             p6 = re.compile(r'^MTU +(?P<mtu>[0-9]+) +bytes, +BW'
-                             ' +(?P<bandwidth>[0-9]+) +Kbit(/sec)?, +DLY'
+                             ' +(?P<bandwidth>[0-9]+) +Kbit(\/sec)?, +DLY'
                              ' +(?P<delay>[0-9]+) +usec,$')
             m = p6.match(line)
             if m:
@@ -419,8 +432,9 @@ class ShowInterfaces(ShowInterfacesSchema):
             # Auto-duplex, 1000Mb/s, media type is 10/100/1000BaseTX
             # Full-duplex, 1000Mb/s, link type is auto, media type is
             # Full Duplex, 1000Mbps, link type is auto, media type is RJ45
+            # Full Duplex, Auto Speed, link type is auto, media type is RJ45
             p11 = re.compile(r'^(?P<duplex_mode>\w+)[\-\s]+[d|D]uplex, +'
-                              '(?P<port_speed>\d+|Auto-speed)(?: *(Mbps|Mb/s))?,'
+                              '(?P<port_speed>\d+|Auto-(S|s)peed|Auto (S|s)peed)(?: *(Mbps|Mb/s))?,'
                               '( *link +type +is +(?P<link_type>\w+),)?'
                               ' *media +type +is *(?P<media_type>[\w\/]+)?$')
             m = p11.match(line)
@@ -461,6 +475,28 @@ class ShowInterfaces(ShowInterfacesSchema):
                     interface_dict[interface]['flow_control']['send'] = False
                 continue
 
+            # Carrier delay is 10 sec
+            p_cd = re.compile(r'^Carrier +delay +is +(?P<carrier_delay>\d+).*$')
+            m = p_cd.match(line)
+            if m:
+                group = m.groupdict()
+                sub_dict = interface_dict.setdefault(interface, {})
+                sub_dict['carrier_delay'] = int(group['carrier_delay'])
+
+            # Asymmetric Carrier-Delay Up Timer is 2 sec
+            # Asymmetric Carrier-Delay Down Timer is 10 sec
+            p_cd_2 = re.compile(r'^Asymmetric +Carrier-Delay +(?P<type>Down|Up)'
+                                 ' +Timer +is +(?P<carrier_delay>\d+).*$')
+            m = p_cd_2.match(line)
+            if m:
+                group = m.groupdict()
+                tp = group['type'].lower()
+                sub_dict = interface_dict.setdefault(interface, {})
+                if tp == 'up':
+                    sub_dict['carrier_delay_up'] = int(group['carrier_delay'])
+                else:
+                    sub_dict['carrier_delay_down'] = int(group['carrier_delay'])
+
             # ARP type: ARPA, ARP Timeout 04:00:00
             p13 = re.compile(r'^ARP +type: +(?P<arp_type>\w+), +'
                               'ARP +Timeout +(?P<arp_timeout>[\w\:\.]+)$')
@@ -487,22 +523,23 @@ class ShowInterfaces(ShowInterfacesSchema):
                 continue
 
             # Members in this channel: Gi1/0/2
+            # Members in this channel: Fo1/0/2 Fo1/0/4
             p15 = re.compile(r'^Members +in +this +channel: +'
                               '(?P<port_channel_member_intfs>[\w\/\.\s\,]+)$')
             m = p15.match(line)
             if m:
                 interface_dict[interface]['port_channel']\
                     ['port_channel_member'] = True
-                intfs = m.groupdict()['port_channel_member_intfs'].split(',')
+                intfs = m.groupdict()['port_channel_member_intfs'].split(' ')
                 intfs = [Common.convert_intf_name(i.strip()) for i in intfs]
                 interface_dict[interface]['port_channel']\
                     ['port_channel_member_intfs'] = intfs
 
-                # build connected interface port_channle
+                # build connected interface port_channel
                 for intf in intfs:
                     if intf not in interface_dict:
                         interface_dict[intf] = {}
-                    if 'port_channle' not in interface_dict[intf]:
+                    if 'port_channel' not in interface_dict[intf]:
                         interface_dict[intf]['port_channel'] = {}
                     interface_dict[intf]['port_channel']['port_channel_member'] = True
                     interface_dict[intf]['port_channel']['port_channel_int'] = interface
@@ -796,8 +833,8 @@ class ShowInterfaces(ShowInterfacesSchema):
                     int(m.groupdict()['out_buffers_swapped'])
                 continue
 
-            # Interface is unnumbered. Using address of Loopback0 (1.1.1.1)
-            # Interface is unnumbered. Using address of GigabitEthernet0/2.1 (201.0.2.1)
+            # Interface is unnumbered. Using address of Loopback0 (10.4.1.1)
+            # Interface is unnumbered. Using address of GigabitEthernet0/2.1 (192.168.154.1)
             p35 = re.compile(r'^Interface +is +unnumbered. +Using +address +of +'
                               '(?P<unnumbered_intf>[\w\/\.]+) +'
                               '\((?P<unnumbered_ip>[\w\.\:]+)\)$')
@@ -859,6 +896,8 @@ class ShowIpInterfaceBrief(ShowIpInterfaceBriefSchema):
      show ip interface brief
      parser class implements detail parsing mechanisms for cli and yang output.
     """
+    exclude = ['method', '(Tunnel.*)']
+
     #*************************
     # schema - class variable
     #
@@ -910,12 +949,13 @@ class ShowIpInterfaceBrief(ShowIpInterfaceBriefSchema):
                                                  "protocol" ],
                                               index=[0])
 
-            # Building the schema out o fthe parsergen output
+            # Building the schema out of the parsergen output
             if res.entries:
-                for intf in res.entries:
-                    del res.entries[intf]['Interface']
+                for intf, intf_dict in res.entries.items():
+                    intf = Common.convert_intf_name(intf)
+                    del intf_dict['Interface']
+                    parsed_dict.setdefault('interface', {}).update({intf: intf_dict})
 
-                parsed_dict['interface'] = res.entries
         return (parsed_dict)
 
     def yang(self):
@@ -944,9 +984,12 @@ class ShowIpInterfaceBriefPipeVlan(ShowIpInterfaceBrief):
     # (nested dict) that has the same data structure across all supported
     # parsing mechanisms (cli(), yang(), xml()).
 
+    cli_command = "show ip interface brief | include Vlan"
+    
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.cmd = 'show ip interface brief | include Vlan'.format()
+        self.cmd = self.cli_command
 
     def cli(self):
         super(ShowIpInterfaceBriefPipeVlan, self).cli()
@@ -1131,11 +1174,15 @@ class ShowInterfacesSwitchportSchema(MetaParser):
 class ShowInterfacesSwitchport(ShowInterfacesSwitchportSchema):
     """parser for show interfaces switchport"""
 
-    cli_command = 'show interfaces switchport'
+    cli_command = ['show interfaces switchport','show interfaces {interface} switchport']
 
-    def cli(self,output=None):
+    def cli(self, interface='', output=None):
         if output is None:
-            out = self.device.execute(self.cli_command)
+            if interface:
+                cmd = self.cli_command[1].format(interface=interface)
+            else:
+                cmd = self.cli_command[0]
+            out = self.device.execute(cmd)
         else:
             out = output
 
@@ -1557,6 +1604,7 @@ class ShowIpInterface(ShowIpInterfaceSchema):
                   show ip interface <interface>"""
 
     cli_command = ['show ip interface','show ip interface {interface}']
+    exclude = ['unnumbered', 'address_determined_by', '(Tunnel.*)', 'joins', 'leaves']
 
     def cli(self,interface="",output=None):
         if output is None:
@@ -1584,7 +1632,7 @@ class ShowIpInterface(ShowIpInterfaceSchema):
                 enabled = m.groupdict()['enabled'].lower()
                 if interface not in interface_dict:
                     interface_dict[interface] = {}
-                if 'down' in enabled or 'delete' in enabled:
+                if 'administratively down' in enabled or 'delete' in enabled:
                     interface_dict[interface]['enabled'] = False
                 else:
                     interface_dict[interface]['enabled'] = True
@@ -1595,7 +1643,7 @@ class ShowIpInterface(ShowIpInterfaceSchema):
                 multicast_groups = []
                 continue
 
-            # Internet address is 201.11.14.1/24
+            # Internet address is 192.168.76.1/24
             p2 = re.compile(r'^Internet +[A|a]ddress +is +(?P<ipv4>(?P<ip>[0-9\.]+)'
                              '\/(?P<prefix_length>[0-9]+))$')
             m = p2.match(line)
@@ -1637,6 +1685,15 @@ class ShowIpInterface(ShowIpInterfaceSchema):
                     ['prefix_length'] = prefix_length
                 interface_dict[interface]['ipv4'][address]\
                     ['secondary'] = True
+                continue
+            # Internet address will be negotiated using DHCP
+            p2_2 = re.compile(r'^Internet +[A|a]ddress +will +be +negotiated +using +DHCP$')
+            m = p2_2.match(line)
+            if m:
+                address='dhcp_negotiated'
+                ipv4_dict = interface_dict[interface].setdefault('ipv4',{})
+                ipv4_dict.setdefault(address, {})
+                ipv4_dict[address]['ip'] = 'dhcp_negotiated'
                 continue
 
             # Broadcast address is 255.255.255.255
@@ -2082,7 +2139,7 @@ class ShowIpInterface(ShowIpInterfaceSchema):
                     interface_dict[interface]['wccp']\
                         ['redirect_exclude'] = True
 
-            # Interface is unnumbered. Using address of Loopback11 (200.11.3.1)
+            # Interface is unnumbered. Using address of Loopback11 (192.168.151.1)
             p40 = re.compile(r'^Interface +is +unnumbered. +Using +address +of +'
                               '(?P<unnumbered_intf>[\w\/\-\.]+) +'
                               '\((?P<unnumbered_ip>[\w\.\:]+)\)$')
@@ -2205,7 +2262,7 @@ class ShowIpv6Interface(ShowIpv6InterfaceSchema):
                 enabled = m.groupdict()['enabled'].lower()
                 if intf not in ret_dict:
                     ret_dict[intf] = {}
-                if 'down' in enabled:
+                if 'administratively down' in enabled:
                     ret_dict[intf]['enabled'] = False
                 else:
                     ret_dict[intf]['enabled'] = True
@@ -2737,6 +2794,7 @@ class ShowInterfacesAccounting(ShowInterfacesAccountingSchema):
         show interfaces <interface> accounting
     """
     cli_command = ['show interfaces {intf} accounting','show interfaces accounting']
+    exclude = ['pkts_in', 'pkts_out', 'chars_in', 'chars_out']
 
     def cli(self, intf=None,output=None):
         if output is None:
@@ -2755,7 +2813,7 @@ class ShowInterfacesAccounting(ShowInterfacesAccountingSchema):
         # GigabitEthernet0/0/0/0
         p1 = re.compile(r'^(?P<interface>[a-zA-Z\-\d\/\.]+)$')
 
-        # Tunnel0 Pim Register Tunnel (Encap) for RP 11.10.1.1
+        # Tunnel0 Pim Register Tunnel (Encap) for RP 10.186.1.1
         p1_1 = re.compile(r'^(?P<interface>Tunnel\d+) +Pim +Register +'
                            'Tunnel +\(Encap\) +for +RP +(?P<rp>[\w\.]+)$')
 
@@ -2787,3 +2845,77 @@ class ShowInterfacesAccounting(ShowInterfacesAccountingSchema):
                 continue
 
         return ret_dict
+
+
+# ====================================================
+#  schema for show interfaces stats
+# ====================================================
+class ShowInterfacesStatsSchema(MetaParser):
+    """Schema for:
+        show interfaces <interface> stats
+        show interfaces stats"""
+
+    schema = {
+        Any(): {
+            'switching_path': {
+                Any(): {
+                    'pkts_in': int, 
+                    'pkts_out': int, 
+                    'chars_in': int, 
+                    'chars_out': int, 
+                },
+            }
+        },
+    }
+
+
+# ====================================================
+#  parser for show interfaces stats
+# ====================================================
+class ShowInterfacesStats(ShowInterfacesStatsSchema):
+    """Parser for :
+        show interfaces <interface> stats
+        show interfaces stats"""
+
+    cli_command = ['show interfaces stats' ,'show interfaces {interface} stats']
+    exclude = ['chars_in' , 'chars_out', 'pkts_in', 'pkts_out']
+
+    def cli(self, interface="", output=None):
+        if output is None:
+            if interface:
+                cmd = self.cli_command[1].format(interface=interface)
+            else:
+                cmd = self.cli_command[0]
+            out = self.device.execute(cmd)
+        else:
+            out = output
+
+        # initialize result dict
+        result_dict = {}
+        
+        # GigabitEthernet0/0/0
+        p1 = re.compile(r'^\s*(?P<interface>[\w./]+)$')
+
+        #    Switching path    Pkts In   Chars In   Pkts Out  Chars Out
+        #         Processor         33       2507         33       2490
+        p2 = re.compile(r'^\s*(?P<path>[\w\- ]*?) +(?P<pkts_in>[\d]+) +(?P<chars_in>[\d]+)'
+                        ' +(?P<pkts_out>[\d]+) +(?P<chars_out>[\d]+)$')
+
+        for line in out.splitlines():
+            line = line.rstrip()
+
+            m = p1.match(line)
+            if m:
+                interface = m.groupdict()['interface']
+                path_dict = result_dict.setdefault(interface, {}).setdefault('switching_path', {})
+                continue
+
+            m = p2.match(line)
+            if m:
+                group = m.groupdict()
+                path = group.pop('path').replace(" ", "_").replace("-", "_").lower()
+                tmp_dict = path_dict.setdefault(path, {})
+                tmp_dict.update({k: int(v) for k, v in group.items()})
+                continue
+
+        return result_dict

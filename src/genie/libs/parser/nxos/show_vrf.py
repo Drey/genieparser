@@ -35,12 +35,14 @@ class ShowVrfSchema(MetaParser):
 class ShowVrf(ShowVrfSchema):
     """Parser for show vrf"""
 
-    cli_command = 'show vrf'
+    cli_command = ['show vrf', 'show vrf {vrf}']
 
-    def cli(self, output=None):
-
+    def cli(self, vrf='', output=None):
         if output is None:
-            out = self.device.execute(self.cli_command)
+            if vrf:
+                out = self.device.execute(self.cli_command[1].format(vrf=vrf))
+            else:
+                out = self.device.execute(self.cli_command[0])
         else:
             out = output
 
@@ -87,6 +89,8 @@ class ShowVrfInterface(ShowVrfInterfaceSchema):
     """Parser for show vrf Interface"""
 
     cli_command = 'show vrf interface'
+    exclude = [
+        '(Null.*)']
 
     def cli(self, output=None):
 
@@ -151,11 +155,17 @@ class ShowVrfDetailSchema(MetaParser):
 class ShowVrfDetail(ShowVrfDetailSchema):
     """Parser for show vrf <vrf> detail"""
 
-    cli_command = 'show vrf {vrf} detail'
+    cli_command = ['show vrf {vrf} detail', 'show vrf all detail']
+    exclude = [
+        'route_distinguisher']
 
-    def cli(self, vrf='all',output=None):
+    def cli(self, vrf='', output=None):
         if output is None:
-            out = self.device.execute(self.cli_command.format(vrf=vrf))
+            if vrf:
+                cmd = self.cli_command[0].format(vrf=vrf)
+            else:
+                cmd = self.cli_command[1]
+            out = self.device.execute(cmd)
         else:
             out = output
         

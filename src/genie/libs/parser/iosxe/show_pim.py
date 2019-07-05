@@ -51,6 +51,8 @@ class ShowIpv6PimInterface(ShowIpv6PimInterfaceSchema):
         show ipv6 pim vrf <vrf> interface"""
 
     cli_command = ['show ipv6 pim vrf {vrf} interface','show ipv6 pim interface']
+    exclude = ['(Tunnel.*)', 'address']
+
 
     def cli(self, vrf='',output=None):
         if output is None:
@@ -170,6 +172,8 @@ class ShowIpv6PimBsrElection(ShowIpv6PimBsrElectionSchema):
         show ipv6 pim vrf <vrf> bsr election"""
 
     cli_command = ['show ipv6 pim vrf {vrf} bsr election', 'show ipv6 pim bsr election']
+    exclude = ['expires', 'up_time', 'rpf_address']
+
 
     def cli(self, vrf='', output=None):
         if output is None:
@@ -336,6 +340,8 @@ class ShowIpv6PimBsrCandidateRp(ShowIpv6PimBsrCandidateRpSchema):
         show ipv6 pim vrf <vrf> bsr candidate-rp"""
 
     cli_command = ['show ipv6 pim vrf {vrf} bsr candidate-rp', 'show ipv6 pim bsr candidate-rp']
+    exclude = ['rp_candidate_next_advertisement']
+
 
     def cli(self, vrf='', output=None):
         if output is None:
@@ -622,6 +628,7 @@ class ShowIpPimBsrRouter(ShowIpPimBsrRouterSchema):
         show ip pim vrf <vrf> bsr-router'''
 
     cli_command = ['show ip pim vrf {vrf} bsr-router', 'show ip pim bsr-router']
+    exclude = ['next_advertisment', 'expires', 'up_time', 'bsr_next_bootstrap']
 
     def cli(self, vrf='', output=None):
         if output is None:
@@ -647,7 +654,7 @@ class ShowIpPimBsrRouter(ShowIpPimBsrRouterSchema):
             line = line.strip()
 
             # PIMv2 Bootstrap information
-            # BSR address: 4.4.4.4 (?)
+            # BSR address: 10.64.4.4 (?)
             p1 = re.compile(r'^\s*BSR +address: +(?P<address>[\w\:\.]+) +\((?P<address_host>[\w\d\S]+)\)$')
             m = p1.match(line)
             if m:
@@ -739,7 +746,7 @@ class ShowIpPimBsrRouter(ShowIpPimBsrRouterSchema):
                     ['rp']['bsr']['bsr_next_bootstrap'] = next_bsr_meaasge
                 continue
 
-            # Candidate BSR address: 1.1.1.1, priority: 0, hash mask length: 0
+            # Candidate BSR address: 10.4.1.1, priority: 0, hash mask length: 0
             p4 = re.compile(r'^\s*Candidate +BSR +address: +(?P<can_address>[\w\d\:\.]+),'
                             ' +priority: +(?P<can_priority>\d+),'
                             ' +hash +mask +length: +(?P<can_hash_mask_length>\d+)$')
@@ -916,6 +923,7 @@ class ShowIpPimRpMapping(ShowIpPimRpMappingSchema):
     # Parser for 'show ip pim vrf <vrf_name> rp mapping'
 
     cli_command = ['show ip pim vrf {vrf} rp mapping', 'show ip pim rp mapping']
+    exclude = ['up_time', 'expiration']
 
     def cli(self, vrf='', output=None):
         if output is None:
@@ -986,7 +994,7 @@ class ShowIpPimRpMapping(ShowIpPimRpMappingSchema):
                 acl = True
                 continue
 
-            # RP 3.3.3.3 (?), v2
+            # RP 10.36.3.3 (?), v2
             p2 = re.compile(r'^\s*RP\:? +(?P<rp_address>[\s\w\:\.]+)'
                             ' +\((?P<rp_address_host>[\w\d\.\:\?]+)\)?'
                             '(, +(?P<rp_version>[\w\d]+))?$')
@@ -1102,8 +1110,8 @@ class ShowIpPimRpMapping(ShowIpPimRpMappingSchema):
                             ['rp_mappings'][rp_group_protocol]['rp_address_host'] = rp_address_host
                 continue
 
-            # Info source: 4.4.4.4 (?), via bootstrap, priority 5, holdtime 150
-            # Info source: 200.12.4.1 (?), elected via Auto-RP, via bootstrap, priority 0, holdtime 181
+            # Info source: 10.64.4.4 (?), via bootstrap, priority 5, holdtime 150
+            # Info source: 192.168.246.1 (?), elected via Auto-RP, via bootstrap, priority 0, holdtime 181
             p3 = re.compile(r'^\s*Info +source: +(?P<info_source>[\w\:\.]+)'
                             ' +\((?P<rp_address_host>[\w\d\.\:\?]+)\)?'
                             '(, +elected +via +(?P<elected>\S+))?'
@@ -1328,6 +1336,8 @@ class ShowIpPimInterfaceDetail(ShowIpPimInterfaceDetailSchema):
     # Parser for 'show ip pim vrf <vrf_name> interface detail'
 
     cli_command = ['show ip pim vrf {vrf} interface detail', 'show ip pim interface detail']
+    exclude = ['hello_packets_in', 'hello_packets_out', 'packets_in', 'packets_out']
+
 
     def cli(self, vrf='', output=None):
         if output is None:
@@ -1470,7 +1480,7 @@ class ShowIpPimInterfaceDetail(ShowIpPimInterfaceDetailSchema):
                 continue
 
             # PIM DR: 10.1.2.2
-            # PIM DR: 1.1.1.1 (this system)
+            # PIM DR: 10.4.1.1 (this system)
             p8 = re.compile(r'^\s*PIM +DR:'
                             ' +(?P<dr_address>[\w\d\S]+)(\s+(?P<info>[\w\S\s]+))?$')
             m = p8.match(line)
@@ -1719,7 +1729,7 @@ class ShowPimNeighbor(ShowPimNeighborSchema):
 
             # Neighbor          Interface                Uptime/Expires    Ver   DR
             # Address                                                            Prio/Mode
-            # 201.0.2.1         Port-channel2.100        1d09h/00:01:39    v2    1 / S P G
+            # 192.168.154.1      Port-channel2.100       1d09h/00:01:39    v2    1 / S P G
             p1 = re.compile(r'^(?P<nei_address>[\d\.]+) +'
                              '(?P<intf>[\w\.\/\-]+) +'
                              '(?P<uptime>[\w\.\:]+)/(?P<expires>[\w\.\:]+) +'
@@ -1802,6 +1812,7 @@ class ShowPimNeighbor(ShowPimNeighborSchema):
 # ==========================================================
 class ShowIpPimNeighbor(ShowPimNeighbor):
     '''Parser for show ip pim [vrf <WORD>] neighbor'''
+    exclude = ['expiration', 'up_time']
 
     def cli(self, vrf='',output=None):
         return super().cli(af='ip', vrf=vrf,output=output)
@@ -1811,6 +1822,8 @@ class ShowIpPimNeighbor(ShowPimNeighbor):
 # ==========================================================
 class ShowIpv6PimNeighbor(ShowPimNeighbor):
     '''Parser for show ipv6 pim [vrf <WORD>] neighbor'''
+    exclude = ['expiration', 'up_time']
+
 
     def cli(self, vrf='',output=None):
         return super().cli(af='ipv6', vrf=vrf,output=output)
@@ -1821,6 +1834,8 @@ class ShowIpv6PimNeighbor(ShowPimNeighbor):
 # ==========================================================
 class ShowIpv6PimNeighborDetail(ShowPimNeighbor):
     '''Parser for show ipv6 pim [vrf <WORD>] neighbor detail'''
+    exclude = ['expiration', 'up_time']
+
 
     def cli(self, vrf='',output=None):
         return super().cli(af='ipv6', vrf=vrf,output=output)
@@ -1892,7 +1907,7 @@ class ShowIpPimInterfaceDf(ShowIpPimInterfaceDfSchema):
             # Interface          RP               DF Winner        Metric          Uptime
             # Ethernet3/3        10.10.0.2        10.4.0.2         0               00:03:49
             #                    10.10.0.3        10.4.0.3         0               00:01:49
-            # Ethernet0/1        20.1.0.1        *10.4.0.4         20              00:00:39 
+            # Ethernet0/1        10.186.0.1      *10.4.0.4         20              00:00:39 
             p1 = re.compile(r'^((?P<intf>[\w\.\/\-]+) +)?'
                              '(?P<address>[\w\.\:]+) +'
                              '(?P<df>\*)?(?P<df_address>[\w\.\:]+) +'
